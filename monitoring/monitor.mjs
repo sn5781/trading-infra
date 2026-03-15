@@ -11,10 +11,14 @@ const POLL_MS = 30_000;
 const DEDUPE_MS = 10 * 60_000;
 
 const INSTRUMENTS = [
+  // Energy
   { key: 'CL', dex: 'xyz', asset: 'xyz:CL' },
   { key: 'BRENTOIL', dex: 'xyz', asset: 'xyz:BRENTOIL' },
   { key: 'USOIL', dex: 'km', asset: 'km:USOIL' },
 ];
+
+const METALS_OI_HIGH_USD = 1_000_000;
+const METAL_PAT = /(GOLD|SILVER|COPPER|PLATINUM|URANIUM|PALLADIUM|ALUMINIUM|PAXG|XAUT|TGLD)/i;
 
 function nowUtcHHMM() {
   const d = new Date();
@@ -61,7 +65,9 @@ async function fetchJson(url, { method = 'GET', headers = {}, body, timeoutMs = 
 
 async function fetchHyperliquidDexMetaAndCtxs(dex) {
   // Hyperliquid info endpoint uses `dex` to select the perp dex.
-  const payload = { type: 'metaAndAssetCtxs', dex };
+  // For the first perp dex, omit `dex` entirely.
+  const payload = { type: 'metaAndAssetCtxs' };
+  if (dex && dex !== 'main') payload.dex = dex;
   const j = await fetchJson(HL_INFO_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -74,7 +80,46 @@ async function fetchHyperliquidDexMetaAndCtxs(dex) {
   const universe = meta?.universe;
   if (!Array.isArray(universe) || !Array.isArray(assetCtxs)) throw new Error('Unexpected Hyperliquid meta/universe shape');
 
-  return { dex, universe, assetCtxs };
+  return { dex: dex || 'main', universe, assetCtxs };
+}
+
+async function fetchPerpDexs() {
+  const payload = { type: 'perpDexs' };
+  const j = await fetchJson(HL_INFO_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+    timeoutMs: 10_000,
+  });
+
+  if (!Array.isArray(j)) throw new Error('Unexpected perpDexs response shape');
+  return j.slice(1); // first element is null
+}
+
+function discoverMetalAssetsFromPerpDexs(perpDexs) {
+  // Returns: Map<dexName, Set<assetCode>>
+  const m = new Map();
+  for (const dex of perpDexs) {
+    const dexName = dex?.name;
+    const caps = dex?.assetToStreamingOiCap;
+    if (!dexName || !Array.isArray(caps)) continue;
+    for (const [asset] of caps) {
+      if (typeof asset !== 'string') continue;
+      if (!METAL_PAT.test(asset)) continue;
+      if (!m.has(dexName)) m.set(dexName, new Set());
+      m.get(dexName).add(asset);
+    }
+  }
+  return m;
+}
+
+function discoverMetalAssetsFromUniverse(universe) {
+  const out = [];
+  for (const a of universe) {
+    const name = a?.name;
+    if (typeof name === 'string' && METAL_PAT.test(name)) out.push(name);
+  }
+  return out;
 }
 
 function extractAssetFromDex({ dex, universe, assetCtxs }, assetName) {
@@ -167,26 +212,64 @@ function fundingRawStr(fundingRate) {
   return `${(fundingRate * 100).toFixed(4)}%/8h`;
 }
 
-function buildInstrumentBlock({ key, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct }) {
+function fmtOiUsd(x) {
+  if (x === null || x === undefined || Number.isNaN(x)) return 'n/a';
+  if (!Number.isFinite(x)) return 'n/a';
+  const abs = Math.abs(x);
+  if (abs >= 1e9) return `$${(x / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `$${(x / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `$${(x / 1e3).toFixed(1)}k`;
+  return `$${x.toFixed(0)}`;
+}
+
+function buildInstrumentBlock({ key, dex, asset, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct, openInterest, oiUsd }) {
   const lines = [];
-  lines.push(`${key}`);
+  lines.push(`${key} (${asset} @ ${dex})`);
   lines.push(`Mark: ${fmtUsd(markPx)} | Oracle: ${fmtUsd(oraclePx)}`);
   lines.push(`Basis: ${fmtBps(basisBps)}`);
   lines.push(`Funding: ${fundingRawStr(fundingRate)} | ${fmtPct1(annualizedFundingPct)} ann.`);
+  if (openInterest !== null && openInterest !== undefined && Number.isFinite(openInterest)) {
+    lines.push(`OI: ${openInterest.toFixed(4)} | Notional: ${fmtOiUsd(oiUsd)}`);
+  }
   return lines.join('\n');
 }
 
-function buildAlert({ kind, emoji, instruments }) {
+function buildAlert({ kind, emoji, instruments, splitHighOi = false }) {
   const lines = [];
   lines.push(`${emoji} ${kind} ${nowUtcHHMM()}`);
-  for (const inst of instruments) {
+
+  if (!splitHighOi) {
+    for (const inst of instruments) {
+      lines.push(buildInstrumentBlock(inst));
+      lines.push('');
+    }
+    return lines.join('\n').trim();
+  }
+
+  const withOi = instruments.map((i) => ({ ...i, oiUsd: i.oiUsd ?? null }));
+  const high = withOi
+    .filter((i) => i.oiUsd !== null && Math.abs(i.oiUsd) >= METALS_OI_HIGH_USD)
+    .sort((a, b) => Math.abs(b.oiUsd) - Math.abs(a.oiUsd));
+  const low = withOi
+    .filter((i) => !(i.oiUsd !== null && Math.abs(i.oiUsd) >= METALS_OI_HIGH_USD))
+    .sort((a, b) => (b.oiUsd ?? 0) - (a.oiUsd ?? 0));
+
+  lines.push(`HIGH OI (>${fmtOiUsd(METALS_OI_HIGH_USD)})`);
+  for (const inst of high) {
     lines.push(buildInstrumentBlock(inst));
     lines.push('');
   }
+
+  lines.push('OTHER');
+  for (const inst of low) {
+    lines.push(buildInstrumentBlock(inst));
+    lines.push('');
+  }
+
   return lines.join('\n').trim();
 }
 
-function logCycle({ ts, key, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct }) {
+function logCycle({ ts, key, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct, openInterest, oiUsd }) {
   const parts = [
     ts,
     key,
@@ -195,6 +278,8 @@ function logCycle({ ts, key, markPx, oraclePx, basisBps, fundingRate, annualized
     `basis_bps=${basisBps.toFixed(2)}`,
     `funding_rate=${fundingRate === null ? 'n/a' : fundingRate.toFixed(10)}`,
     `funding_ann_pct=${annualizedFundingPct === null ? 'n/a' : annualizedFundingPct.toFixed(2)}`,
+    `oi=${openInterest === null || openInterest === undefined ? 'n/a' : openInterest.toFixed(4)}`,
+    `oi_usd=${oiUsd === null || oiUsd === undefined ? 'n/a' : oiUsd.toFixed(2)}`,
   ];
   console.log(parts.join(' | '));
 }
@@ -203,24 +288,43 @@ async function runOnce({ forceTestAlert = false } = {}) {
   const ts = new Date().toISOString();
   const prev = await readState();
 
+  // Build a full instrument list:
+  // - fixed energy instruments
+  // - discovered metals across all perpetual dexs
+  const perpDexs = await fetchPerpDexs();
+  const metalByDex = discoverMetalAssetsFromPerpDexs(perpDexs);
+
+  // Always scan HL main universe too (covers e.g. PAXG if present).
+  const mainDexData = await fetchHyperliquidDexMetaAndCtxs('main');
+  const mainMetalAssets = discoverMetalAssetsFromUniverse(mainDexData.universe);
+
   // Fetch each dex once.
-  const dexes = [...new Set(INSTRUMENTS.map((i) => i.dex))];
+  const dexes = new Set(INSTRUMENTS.map((i) => i.dex));
+  for (const dexName of metalByDex.keys()) dexes.add(dexName);
+  dexes.add('main');
+
   const dexData = Object.fromEntries(
     await Promise.all(
-      dexes.map(async (dex) => {
-        const data = await fetchHyperliquidDexMetaAndCtxs(dex);
+      [...dexes].map(async (dex) => {
+        const data = dex === 'main' ? mainDexData : await fetchHyperliquidDexMetaAndCtxs(dex);
         return [dex, data];
       })
     )
   );
 
-  const instruments = INSTRUMENTS.map((i) => {
+  const instruments = [];
+
+  // Energy instruments (explicit)
+  for (const i of INSTRUMENTS) {
     const d = dexData[i.dex];
     const asset = process.env[`HL_ASSET_${i.key}`] || i.asset;
     const out = extractAssetFromDex(d, asset);
     const basisBps = computeBasisBps(out.markPx, out.oraclePx);
     const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
-    return {
+    const openInterest = Number.parseFloat(d.assetCtxs?.[d.universe.findIndex((a) => a?.name === out.asset)]?.openInterest);
+    const oi = Number.isFinite(openInterest) ? openInterest : null;
+    const oiUsd = oi === null ? null : oi * out.markPx;
+    instruments.push({
       key: i.key,
       dex: out.dex,
       asset: out.asset,
@@ -229,8 +333,49 @@ async function runOnce({ forceTestAlert = false } = {}) {
       basisBps,
       fundingRate: out.fundingRate,
       annualizedFundingPct,
-    };
-  });
+      openInterest: oi,
+      oiUsd,
+      category: 'energy',
+    });
+  }
+
+  // Metals (discovered)
+  const metalRows = [];
+  for (const [dexName, assets] of metalByDex.entries()) {
+    for (const asset of assets) metalRows.push({ dex: dexName, asset });
+  }
+  for (const asset of mainMetalAssets) metalRows.push({ dex: 'main', asset });
+
+  // Dedup (same dex+asset)
+  const seen = new Set();
+  for (const m of metalRows) {
+    const k = `${m.dex}|${m.asset}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+
+    const d = dexData[m.dex];
+    if (!d) continue;
+    const out = extractAssetFromDex(d, m.asset);
+    const basisBps = computeBasisBps(out.markPx, out.oraclePx);
+    const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
+    const idx = d.universe.findIndex((a) => a?.name === out.asset);
+    const openInterest = Number.parseFloat(d.assetCtxs?.[idx]?.openInterest);
+    const oi = Number.isFinite(openInterest) ? openInterest : null;
+    const oiUsd = oi === null ? null : oi * out.markPx;
+    instruments.push({
+      key: out.asset,
+      dex: out.dex,
+      asset: out.asset,
+      markPx: out.markPx,
+      oraclePx: out.oraclePx,
+      basisBps,
+      fundingRate: out.fundingRate,
+      annualizedFundingPct,
+      openInterest: oi,
+      oiUsd,
+      category: 'metals',
+    });
+  }
 
   for (const inst of instruments) {
     logCycle({
@@ -241,6 +386,8 @@ async function runOnce({ forceTestAlert = false } = {}) {
       basisBps: inst.basisBps,
       fundingRate: inst.fundingRate,
       annualizedFundingPct: inst.annualizedFundingPct,
+      openInterest: inst.openInterest,
+      oiUsd: inst.oiUsd,
     });
   }
 
@@ -257,6 +404,8 @@ async function runOnce({ forceTestAlert = false } = {}) {
           basis_bps: i.basisBps,
           funding_rate: i.fundingRate,
           annualized_funding_pct: i.annualizedFundingPct,
+          open_interest: i.openInterest,
+          open_interest_usd: i.oiUsd,
         },
       ])
     ),
@@ -273,7 +422,7 @@ async function runOnce({ forceTestAlert = false } = {}) {
   const nowMs = Date.now();
 
   if (forceTestAlert) {
-    const text = buildAlert({ kind: 'TEST ALERT', emoji: '🧪', instruments });
+    const text = buildAlert({ kind: 'TEST ALERT', emoji: '🧪', instruments, splitHighOi: true });
     try {
       await sendTelegram(text);
       console.log(`[${ts}] Sent test alert`);
