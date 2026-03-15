@@ -234,9 +234,32 @@ function buildInstrumentBlock({ key, dex, asset, markPx, oraclePx, basisBps, fun
   return lines.join('\n');
 }
 
+function buildExecutableArbsSection(instruments) {
+  const hits = instruments
+    .filter((i) => Math.abs(i.basisBps) > 20 && i.annualizedFundingPct !== null && Math.abs(i.annualizedFundingPct) > 40)
+    .sort((a, b) => Math.abs(b.basisBps) - Math.abs(a.basisBps));
+
+  const lines = [];
+  lines.push('Executable Arbitrages');
+  if (hits.length === 0) {
+    lines.push('(none)');
+    return lines.join('\n');
+  }
+
+  for (const i of hits) {
+    // Distinctive emoji per item.
+    lines.push(`⚡ ${i.key} (${i.asset} @ ${i.dex}) | basis ${fmtBps(i.basisBps)} | funding ${fmtPct1(i.annualizedFundingPct)} ann.`);
+  }
+
+  return lines.join('\n');
+}
+
 function buildAlert({ kind, emoji, instruments, splitHighOi = false }) {
   const lines = [];
   lines.push(`${emoji} ${kind} ${nowUtcHHMM()}`);
+  lines.push('');
+  lines.push(buildExecutableArbsSection(instruments));
+  lines.push('');
 
   if (!splitHighOi) {
     for (const inst of instruments) {
