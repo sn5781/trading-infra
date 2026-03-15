@@ -95,11 +95,18 @@ async function fetchHyperliquidAsset() {
   const ctx = assetCtxs[idx];
   const markPx = Number.parseFloat(ctx?.markPx);
   const oraclePx = Number.parseFloat(ctx?.oraclePx);
+  const fundingRate = Number.parseFloat(ctx?.funding);
+
   if (!Number.isFinite(markPx) || !Number.isFinite(oraclePx)) {
     throw new Error(`Non-numeric markPx/oraclePx for ${foundName}: markPx=${ctx?.markPx} oraclePx=${ctx?.oraclePx}`);
   }
 
-  return { symbol: foundName, markPx, oraclePx };
+  return {
+    symbol: foundName,
+    markPx,
+    oraclePx,
+    fundingRate: Number.isFinite(fundingRate) ? fundingRate : null,
+  };
 }
 
 async function fetchLorisFundingHyperliquid(symbols = ['CL', 'WTI']) {
@@ -130,17 +137,24 @@ function computeBasisBps(markPx, oraclePx) {
   return ((markPx - oraclePx) / oraclePx) * 10_000;
 }
 
-function computeAnnualizedFundingPct(fundingRateRaw) {
-  // funding_rate is multiplied by 10,000 for precision.
+function computeAnnualizedFundingPctFromLoris(fundingRateRaw) {
+  // Loris funding_rate is multiplied by 10,000 for precision.
   // annualized_funding = (funding_rate / 10000) * 3 * 365 * 100
-  const unit = fundingRateToUnit(fundingRateRaw);
+  const unit = lorisFundingRateToUnit(fundingRateRaw);
   if (unit === null) return null;
   return unit * 3 * 365 * 100;
 }
 
-function fundingRateToUnit(fundingRateRaw) {
+function lorisFundingRateToUnit(fundingRateRaw) {
   if (fundingRateRaw === null || fundingRateRaw === undefined || Number.isNaN(fundingRateRaw)) return null;
   return fundingRateRaw / 10_000;
+}
+
+function computeAnnualizedFundingPctFromHl(fundingRate) {
+  // Hyperliquid assetCtxs `funding` is already a unit rate (e.g. 0.0000125), not x1e4.
+  // Hyperliquid funding is paid 3x/day (8h), so annualization matches the spec: rate * 3 * 365 * 100.
+  if (fundingRate === null || fundingRate === undefined || Number.isNaN(fundingRate)) return null;
+  return fundingRate * 3 * 365 * 100;
 }
 
 async function readState() {
@@ -179,21 +193,28 @@ async function sendTelegram(text) {
   });
 }
 
-function buildAlert({ kind, emoji, markPx, oraclePx, basisBps, annualizedFundingPct }) {
+function buildAlert({ kind, emoji, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct }) {
   const lines = [];
   lines.push(`${emoji} ${kind} ${nowUtcHHMM()}`);
   lines.push(`Mark: ${fmtUsd(markPx)} | Oracle: ${fmtUsd(oraclePx)}`);
   lines.push(`Basis: ${fmtBps(basisBps)}`);
-  lines.push(`Funding: ${fmtPct1(annualizedFundingPct)} ann.`);
+
+  const fundingRaw =
+    fundingRate === null || fundingRate === undefined || Number.isNaN(fundingRate)
+      ? 'n/a'
+      : `${(fundingRate * 100).toFixed(4)}%/8h`;
+  lines.push(`Funding: ${fundingRaw} | ${fmtPct1(annualizedFundingPct)} ann.`);
+
   return lines.join('\n');
 }
 
-function logCycle({ ts, markPx, oraclePx, basisBps, annualizedFundingPct }) {
+function logCycle({ ts, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct }) {
   const parts = [
     ts,
     `mark=${markPx.toFixed(4)}`,
     `oracle=${oraclePx.toFixed(4)}`,
     `basis_bps=${basisBps.toFixed(2)}`,
+    `funding_rate=${fundingRate === null ? 'n/a' : fundingRate.toFixed(10)}`,
     `funding_ann_pct=${annualizedFundingPct === null ? 'n/a' : annualizedFundingPct.toFixed(2)}`,
   ];
   console.log(parts.join(' | '));
@@ -203,24 +224,25 @@ async function runOnce({ forceTestAlert = false } = {}) {
   const ts = new Date().toISOString();
   const prev = await readState();
 
-  const { symbol, markPx, oraclePx } = await fetchHyperliquidAsset();
+  const { symbol, markPx, oraclePx, fundingRate: hlFundingRate } = await fetchHyperliquidAsset();
   const basisBps = computeBasisBps(markPx, oraclePx);
 
-  let fundingRateRaw = null;
-  let fundingSymbol = null;
-  let annualizedFundingPct = null;
+  // Primary funding source: Hyperliquid assetCtxs `funding`.
+  const fundingRate = hlFundingRate;
+  const annualizedFundingPct = computeAnnualizedFundingPctFromHl(fundingRate);
 
+  // Secondary (optional) funding source: Loris. Kept for inspection but not used for alerts/annualization.
+  let lorisFundingRateRaw = null;
+  let lorisFundingSymbol = null;
   try {
     const fr = await fetchLorisFundingHyperliquid(['CL', 'WTI', symbol].filter(Boolean));
-    fundingRateRaw = fr.fundingRateRaw;
-    fundingSymbol = fr.fundingSymbol;
-    if (fundingRateRaw !== null) annualizedFundingPct = computeAnnualizedFundingPct(fundingRateRaw);
+    lorisFundingRateRaw = fr.fundingRateRaw;
+    lorisFundingSymbol = fr.fundingSymbol;
   } catch (e) {
     console.error(`[${ts}] Loris funding fetch failed: ${e?.message || e}`);
-    // Keep annualizedFundingPct = null
   }
 
-  logCycle({ ts, markPx, oraclePx, basisBps, annualizedFundingPct });
+  logCycle({ ts, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct });
 
   const state = {
     ts,
@@ -228,9 +250,16 @@ async function runOnce({ forceTestAlert = false } = {}) {
     markPx,
     oraclePx,
     basis_bps: basisBps,
-    funding_rate_raw: fundingRateRaw,
-    funding_symbol: fundingSymbol,
+
+    // Hyperliquid funding
+    funding_rate: fundingRate,
     annualized_funding_pct: annualizedFundingPct,
+
+    // Loris (optional)
+    loris_funding_rate_raw: lorisFundingRateRaw,
+    loris_funding_symbol: lorisFundingSymbol,
+    loris_annualized_funding_pct: computeAnnualizedFundingPctFromLoris(lorisFundingRateRaw),
+
     alerts: {
       basis_last_ms: prev?.alerts?.basis_last_ms ?? 0,
       funding_last_ms: prev?.alerts?.funding_last_ms ?? 0,
@@ -249,6 +278,7 @@ async function runOnce({ forceTestAlert = false } = {}) {
       markPx,
       oraclePx,
       basisBps,
+      fundingRate,
       annualizedFundingPct,
     });
     try {
@@ -265,6 +295,7 @@ async function runOnce({ forceTestAlert = false } = {}) {
         markPx,
         oraclePx,
         basisBps,
+        fundingRate,
         annualizedFundingPct,
       });
       try {
@@ -282,6 +313,7 @@ async function runOnce({ forceTestAlert = false } = {}) {
         markPx,
         oraclePx,
         basisBps,
+        fundingRate,
         annualizedFundingPct,
       });
       try {
