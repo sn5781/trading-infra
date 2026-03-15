@@ -55,7 +55,8 @@ async function fetchJson(url, { method = 'GET', headers = {}, body, timeoutMs = 
 }
 
 async function fetchHyperliquidAsset() {
-  const payload = { type: 'metaAndAssetCtxs' };
+  // CL is a HIP-3 market on the "xyz" perp dex.
+  const payload = { type: 'metaAndAssetCtxs', perpDex: 'xyz' };
   const j = await fetchJson(HL_INFO_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -69,7 +70,7 @@ async function fetchHyperliquidAsset() {
   if (!Array.isArray(universe) || !Array.isArray(assetCtxs)) throw new Error('Unexpected Hyperliquid meta/universe shape');
 
   const envAsset = process.env.HL_ASSET;
-  const wanted = [envAsset, 'WTI', 'CL'].filter(Boolean);
+  const wanted = [envAsset, 'CL'].filter(Boolean);
 
   let idx = -1;
   let foundName = null;
