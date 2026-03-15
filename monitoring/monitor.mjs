@@ -3,13 +3,18 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
-const LORIS_FUNDING_URL = 'https://api.loris.tools/funding';
 
 const DATA_DIR = path.resolve('./data');
 const LATEST_PATH = path.join(DATA_DIR, 'basis-latest.json');
 
 const POLL_MS = 30_000;
 const DEDUPE_MS = 10 * 60_000;
+
+const INSTRUMENTS = [
+  { key: 'CL', dex: 'xyz', asset: 'xyz:CL' },
+  { key: 'BRENTOIL', dex: 'xyz', asset: 'xyz:BRENTOIL' },
+  { key: 'USOIL', dex: 'km', asset: 'km:USOIL' },
+];
 
 function nowUtcHHMM() {
   const d = new Date();
@@ -54,10 +59,8 @@ async function fetchJson(url, { method = 'GET', headers = {}, body, timeoutMs = 
   }
 }
 
-async function fetchHyperliquidAsset() {
-  // CL is a HIP-3 market on the "xyz" perp dex.
-  // Hyperliquid info endpoint uses `dex` (not `perpDex`) to select the perp dex.
-  const dex = process.env.HL_DEX || 'xyz';
+async function fetchHyperliquidDexMetaAndCtxs(dex) {
+  // Hyperliquid info endpoint uses `dex` to select the perp dex.
   const payload = { type: 'metaAndAssetCtxs', dex };
   const j = await fetchJson(HL_INFO_URL, {
     method: 'POST',
@@ -71,25 +74,14 @@ async function fetchHyperliquidAsset() {
   const universe = meta?.universe;
   if (!Array.isArray(universe) || !Array.isArray(assetCtxs)) throw new Error('Unexpected Hyperliquid meta/universe shape');
 
-  const envAsset = process.env.HL_ASSET;
-  const defaultAsset = `${dex}:CL`;
-  const wanted = [envAsset, defaultAsset, 'CL'].filter(Boolean);
+  return { dex, universe, assetCtxs };
+}
 
-  let idx = -1;
-  let foundName = null;
-  for (const name of wanted) {
-    idx = universe.findIndex((a) => a?.name === name);
-    if (idx !== -1) {
-      foundName = name;
-      break;
-    }
-  }
+function extractAssetFromDex({ dex, universe, assetCtxs }, assetName) {
+  const idx = universe.findIndex((a) => a?.name === assetName);
   if (idx === -1) {
     const sample = universe.slice(0, 20).map((a) => a?.name).filter(Boolean);
-    throw new Error(
-      `Could not find ${wanted.join('/')} in Hyperliquid universe. ` +
-        `Set HL_ASSET to override. (sample: ${sample.join(', ')})`
-    );
+    throw new Error(`Could not find ${assetName} in Hyperliquid dex=${dex} universe (sample: ${sample.join(', ')})`);
   }
 
   const ctx = assetCtxs[idx];
@@ -98,39 +90,16 @@ async function fetchHyperliquidAsset() {
   const fundingRate = Number.parseFloat(ctx?.funding);
 
   if (!Number.isFinite(markPx) || !Number.isFinite(oraclePx)) {
-    throw new Error(`Non-numeric markPx/oraclePx for ${foundName}: markPx=${ctx?.markPx} oraclePx=${ctx?.oraclePx}`);
+    throw new Error(`Non-numeric markPx/oraclePx for ${assetName} dex=${dex}: markPx=${ctx?.markPx} oraclePx=${ctx?.oraclePx}`);
   }
 
   return {
-    symbol: foundName,
+    dex,
+    asset: assetName,
     markPx,
     oraclePx,
     fundingRate: Number.isFinite(fundingRate) ? fundingRate : null,
   };
-}
-
-async function fetchLorisFundingHyperliquid(symbols = ['CL', 'WTI']) {
-  const j = await fetchJson(LORIS_FUNDING_URL, { timeoutMs: 10_000 });
-  const fr = j?.funding_rates;
-  if (!fr || typeof fr !== 'object') throw new Error('Unexpected Loris response shape (funding_rates missing)');
-
-  const hl = fr?.hyperliquid;
-  if (!hl || typeof hl !== 'object') {
-    // Loris may be down-leveling or changing schema.
-    return { fundingRateRaw: null, fundingSymbol: null };
-  }
-
-  for (const sym of symbols) {
-    if (Object.prototype.hasOwnProperty.call(hl, sym)) {
-      const fundingRateRaw = Number.parseFloat(hl[sym]);
-      return {
-        fundingRateRaw: Number.isFinite(fundingRateRaw) ? fundingRateRaw : null,
-        fundingSymbol: sym,
-      };
-    }
-  }
-
-  return { fundingRateRaw: null, fundingSymbol: null };
 }
 
 function computeBasisBps(markPx, oraclePx) {
@@ -193,24 +162,34 @@ async function sendTelegram(text) {
   });
 }
 
-function buildAlert({ kind, emoji, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct }) {
+function fundingRawStr(fundingRate) {
+  if (fundingRate === null || fundingRate === undefined || Number.isNaN(fundingRate)) return 'n/a';
+  return `${(fundingRate * 100).toFixed(4)}%/8h`;
+}
+
+function buildInstrumentBlock({ key, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct }) {
   const lines = [];
-  lines.push(`${emoji} ${kind} ${nowUtcHHMM()}`);
+  lines.push(`${key}`);
   lines.push(`Mark: ${fmtUsd(markPx)} | Oracle: ${fmtUsd(oraclePx)}`);
   lines.push(`Basis: ${fmtBps(basisBps)}`);
-
-  const fundingRaw =
-    fundingRate === null || fundingRate === undefined || Number.isNaN(fundingRate)
-      ? 'n/a'
-      : `${(fundingRate * 100).toFixed(4)}%/8h`;
-  lines.push(`Funding: ${fundingRaw} | ${fmtPct1(annualizedFundingPct)} ann.`);
-
+  lines.push(`Funding: ${fundingRawStr(fundingRate)} | ${fmtPct1(annualizedFundingPct)} ann.`);
   return lines.join('\n');
 }
 
-function logCycle({ ts, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct }) {
+function buildAlert({ kind, emoji, instruments }) {
+  const lines = [];
+  lines.push(`${emoji} ${kind} ${nowUtcHHMM()}`);
+  for (const inst of instruments) {
+    lines.push(buildInstrumentBlock(inst));
+    lines.push('');
+  }
+  return lines.join('\n').trim();
+}
+
+function logCycle({ ts, key, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct }) {
   const parts = [
     ts,
+    key,
     `mark=${markPx.toFixed(4)}`,
     `oracle=${oraclePx.toFixed(4)}`,
     `basis_bps=${basisBps.toFixed(2)}`,
@@ -224,63 +203,77 @@ async function runOnce({ forceTestAlert = false } = {}) {
   const ts = new Date().toISOString();
   const prev = await readState();
 
-  const { symbol, markPx, oraclePx, fundingRate: hlFundingRate } = await fetchHyperliquidAsset();
-  const basisBps = computeBasisBps(markPx, oraclePx);
+  // Fetch each dex once.
+  const dexes = [...new Set(INSTRUMENTS.map((i) => i.dex))];
+  const dexData = Object.fromEntries(
+    await Promise.all(
+      dexes.map(async (dex) => {
+        const data = await fetchHyperliquidDexMetaAndCtxs(dex);
+        return [dex, data];
+      })
+    )
+  );
 
-  // Primary funding source: Hyperliquid assetCtxs `funding`.
-  const fundingRate = hlFundingRate;
-  const annualizedFundingPct = computeAnnualizedFundingPctFromHl(fundingRate);
+  const instruments = INSTRUMENTS.map((i) => {
+    const d = dexData[i.dex];
+    const asset = process.env[`HL_ASSET_${i.key}`] || i.asset;
+    const out = extractAssetFromDex(d, asset);
+    const basisBps = computeBasisBps(out.markPx, out.oraclePx);
+    const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
+    return {
+      key: i.key,
+      dex: out.dex,
+      asset: out.asset,
+      markPx: out.markPx,
+      oraclePx: out.oraclePx,
+      basisBps,
+      fundingRate: out.fundingRate,
+      annualizedFundingPct,
+    };
+  });
 
-  // Secondary (optional) funding source: Loris. Kept for inspection but not used for alerts/annualization.
-  let lorisFundingRateRaw = null;
-  let lorisFundingSymbol = null;
-  try {
-    const fr = await fetchLorisFundingHyperliquid(['CL', 'WTI', symbol].filter(Boolean));
-    lorisFundingRateRaw = fr.fundingRateRaw;
-    lorisFundingSymbol = fr.fundingSymbol;
-  } catch (e) {
-    console.error(`[${ts}] Loris funding fetch failed: ${e?.message || e}`);
+  for (const inst of instruments) {
+    logCycle({
+      ts,
+      key: inst.key,
+      markPx: inst.markPx,
+      oraclePx: inst.oraclePx,
+      basisBps: inst.basisBps,
+      fundingRate: inst.fundingRate,
+      annualizedFundingPct: inst.annualizedFundingPct,
+    });
   }
-
-  logCycle({ ts, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct });
 
   const state = {
     ts,
-    symbol,
-    markPx,
-    oraclePx,
-    basis_bps: basisBps,
-
-    // Hyperliquid funding
-    funding_rate: fundingRate,
-    annualized_funding_pct: annualizedFundingPct,
-
-    // Loris (optional)
-    loris_funding_rate_raw: lorisFundingRateRaw,
-    loris_funding_symbol: lorisFundingSymbol,
-    loris_annualized_funding_pct: computeAnnualizedFundingPctFromLoris(lorisFundingRateRaw),
-
-    alerts: {
-      basis_last_ms: prev?.alerts?.basis_last_ms ?? 0,
-      funding_last_ms: prev?.alerts?.funding_last_ms ?? 0,
-    },
+    instruments: Object.fromEntries(
+      instruments.map((i) => [
+        i.key,
+        {
+          dex: i.dex,
+          asset: i.asset,
+          markPx: i.markPx,
+          oraclePx: i.oraclePx,
+          basis_bps: i.basisBps,
+          funding_rate: i.fundingRate,
+          annualized_funding_pct: i.annualizedFundingPct,
+        },
+      ])
+    ),
+    alerts: prev?.alerts || {},
   };
+
+  // Ensure dedupe keys exist.
+  for (const i of instruments) {
+    state.alerts[i.key] = state.alerts[i.key] || { basis_last_ms: 0, funding_last_ms: 0 };
+    state.alerts[i.key].basis_last_ms = state.alerts[i.key].basis_last_ms ?? 0;
+    state.alerts[i.key].funding_last_ms = state.alerts[i.key].funding_last_ms ?? 0;
+  }
 
   const nowMs = Date.now();
 
-  const basisTrigger = Math.abs(basisBps) > 200;
-  const fundingTrigger = annualizedFundingPct !== null && Math.abs(annualizedFundingPct) > 50;
-
   if (forceTestAlert) {
-    const text = buildAlert({
-      kind: 'TEST ALERT',
-      emoji: '🧪',
-      markPx,
-      oraclePx,
-      basisBps,
-      fundingRate,
-      annualizedFundingPct,
-    });
+    const text = buildAlert({ kind: 'TEST ALERT', emoji: '🧪', instruments });
     try {
       await sendTelegram(text);
       console.log(`[${ts}] Sent test alert`);
@@ -288,39 +281,28 @@ async function runOnce({ forceTestAlert = false } = {}) {
       console.error(`[${ts}] Telegram send failed (test): ${e?.message || e}`);
     }
   } else {
-    if (basisTrigger && nowMs - state.alerts.basis_last_ms > DEDUPE_MS) {
-      const text = buildAlert({
-        kind: 'BASIS WIDE',
-        emoji: '🔴',
-        markPx,
-        oraclePx,
-        basisBps,
-        fundingRate,
-        annualizedFundingPct,
-      });
-      try {
-        await sendTelegram(text);
-        state.alerts.basis_last_ms = nowMs;
-      } catch (e) {
-        console.error(`[${ts}] Telegram send failed (basis): ${e?.message || e}`);
-      }
-    }
+    for (const inst of instruments) {
+      const basisTrigger = Math.abs(inst.basisBps) > 200;
+      const fundingTrigger = inst.annualizedFundingPct !== null && Math.abs(inst.annualizedFundingPct) > 50;
 
-    if (fundingTrigger && nowMs - state.alerts.funding_last_ms > DEDUPE_MS) {
-      const text = buildAlert({
-        kind: 'FUNDING EXTREME',
-        emoji: '🟡',
-        markPx,
-        oraclePx,
-        basisBps,
-        fundingRate,
-        annualizedFundingPct,
-      });
-      try {
-        await sendTelegram(text);
-        state.alerts.funding_last_ms = nowMs;
-      } catch (e) {
-        console.error(`[${ts}] Telegram send failed (funding): ${e?.message || e}`);
+      if (basisTrigger && nowMs - state.alerts[inst.key].basis_last_ms > DEDUPE_MS) {
+        const text = buildAlert({ kind: 'BASIS WIDE', emoji: '🔴', instruments: [inst] });
+        try {
+          await sendTelegram(text);
+          state.alerts[inst.key].basis_last_ms = nowMs;
+        } catch (e) {
+          console.error(`[${ts}] Telegram send failed (basis ${inst.key}): ${e?.message || e}`);
+        }
+      }
+
+      if (fundingTrigger && nowMs - state.alerts[inst.key].funding_last_ms > DEDUPE_MS) {
+        const text = buildAlert({ kind: 'FUNDING EXTREME', emoji: '🟡', instruments: [inst] });
+        try {
+          await sendTelegram(text);
+          state.alerts[inst.key].funding_last_ms = nowMs;
+        } catch (e) {
+          console.error(`[${ts}] Telegram send failed (funding ${inst.key}): ${e?.message || e}`);
+        }
       }
     }
   }
