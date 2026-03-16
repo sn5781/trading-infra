@@ -39,6 +39,29 @@ async function fetchAllMids() {
   });
 }
 
+async function fetchPerpCtxs() {
+  const j = await fetchJson(HL_INFO_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
+  });
+  const universe = j?.[0]?.universe;
+  const ctxs = j?.[1];
+  if (!Array.isArray(universe) || !Array.isArray(ctxs)) throw new Error('Unexpected HL metaAndAssetCtxs shape');
+
+  function getMid(sym) {
+    const idx = universe.findIndex((a) => a?.name === sym);
+    if (idx === -1) return null;
+    const mid = Number.parseFloat(ctxs[idx]?.midPx);
+    return Number.isFinite(mid) ? mid : null;
+  }
+
+  return {
+    BTC: getMid('BTC'),
+    ETH: getMid('ETH'),
+  };
+}
+
 function pow10(n) {
   let x = 1n;
   for (let i = 0; i < n; i++) x *= 10n;
@@ -101,7 +124,8 @@ function renderTable(rows) {
 }
 
 async function main() {
-  const mids = await fetchAllMids();
+  const spotMids = await fetchAllMids();
+  const perpMids = await fetchPerpCtxs();
 
   const usdcAmount = BigInt(Math.round(TRADE_SIZE_USDC * 1e6));
 
@@ -109,34 +133,73 @@ async function main() {
   for (const a of ASSETS) {
     const t = TOKENS[a];
     const under = t.underlying;
-    const hlMid = Number.parseFloat(mids[under]);
 
-    const q = await cowQuoteSell({
+    const hlSpotMid = Number.parseFloat(spotMids[under]);
+    const hlPerpMid = perpMids[under];
+
+    if (!Number.isFinite(hlSpotMid)) throw new Error(`Missing HL spot mid (allMids) for ${under}`);
+
+    // Quote both directions so we can choose the executable direction based on basis sign.
+    // If basis negative => BUY token with 5k USDC.
+    // If basis positive => SELL token for ~5k USDC notional.
+
+    // BUY leg: 5k USDC -> token
+    const qBuy = await cowQuoteSell({
       sellToken: TOKENS.USDC.address,
       buyToken: t.address,
       sellAmountBeforeFee: usdcAmount,
     });
+    const buyAmountBuy = BigInt(qBuy.quote.buyAmount);
+    const buyTokens = Number(buyAmountBuy) / Number(pow10(t.decimals));
+    const pxBuy = TRADE_SIZE_USDC / buyTokens; // USDC per token
+    const basisBuyBps = basisBps(pxBuy, hlSpotMid);
 
-    const buyAmount = BigInt(q.quote.buyAmount);
-    const buyTokens = Number(buyAmount) / Number(pow10(t.decimals));
-    const cowPx = TRADE_SIZE_USDC / buyTokens;
+    // SELL leg: token -> USDC, with token amount sized to ~5k notional using HL spot mid.
+    const sellTokensTarget = TRADE_SIZE_USDC / hlSpotMid;
+    const sellAmountTokens = BigInt(Math.floor(sellTokensTarget * 10 ** t.decimals));
+    const qSell = await cowQuoteSell({
+      sellToken: t.address,
+      buyToken: TOKENS.USDC.address,
+      sellAmountBeforeFee: sellAmountTokens,
+    });
+    const buyAmountSell = BigInt(qSell.quote.buyAmount);
+    const usdcOut = Number(buyAmountSell) / 1e6;
+    const soldTokens = Number(sellAmountTokens) / Number(pow10(t.decimals));
+    const pxSell = usdcOut / soldTokens;
+    const basisSellBps = basisBps(pxSell, hlSpotMid);
 
-    const dBps = Number.isFinite(hlMid) ? basisBps(cowPx, hlMid) : NaN;
+    const direction = basisBuyBps < 0 ? 'BUY' : 'SELL';
+    const execPx = direction === 'BUY' ? pxBuy : pxSell;
+    const execBasisBps = direction === 'BUY' ? basisBuyBps : basisSellBps;
+    const execQty = direction === 'BUY' ? buyTokens : soldTokens;
 
     rows.push({
       asset: a,
-      hl_mid: fmtUsd(hlMid),
-      cow_5k_usdc: fmtUsd(cowPx),
-      diff_bps: fmtBps(dBps),
-      buy_amount: fmt(buyTokens, 8),
+      hl_spot_mid: fmtUsd(hlSpotMid),
+      hl_perp_mid: hlPerpMid === null ? 'n/a' : fmtUsd(hlPerpMid),
+      cow_5k_usdc_swap: fmtUsd(execPx),
+      dir: direction,
+      diff_bps: fmtBps(execBasisBps),
+      qty: fmt(execQty, 8),
     });
   }
 
+  const headers = ['asset', 'hl_spot_mid', 'hl_perp_mid', 'cow_5k_usdc_swap', 'dir', 'diff_bps', 'qty'];
+  function render(rows) {
+    const table = [headers, ...rows.map((r) => headers.map((h) => r[h]))];
+    const widths = headers.map((_, i) => Math.max(...table.map((row) => String(row[i]).length)));
+    const lines = table.map((row) => row.map((cell, i) => String(cell).padEnd(widths[i])).join(' | ').trimEnd());
+    lines.splice(1, 0, widths.map((w) => '-'.repeat(w)).join('-+-'));
+    return lines.join('\n');
+  }
+
   const out = [
-    `Spot price comparison (CowSwap executable quote: sell ${TRADE_SIZE_USDC} USDC)`,
-    `Reference: Hyperliquid allMids (BTC/ETH)`,
+    `Spot execution vs HL mids (CowSwap sim with ${TRADE_SIZE_USDC} USDC notional)`,
+    `- If basis<0 => BUY with 5k USDC`,
+    `- If basis>0 => SELL ~5k notional`,
+    `All basis vs HL_SPOT_MID (allMids)`,
     '',
-    renderTable(rows),
+    render(rows),
   ].join('\n');
 
   console.log(out);
