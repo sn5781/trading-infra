@@ -277,8 +277,10 @@ function buildExecutableArbsSection(instruments) {
   const hits = instruments
     .filter(
       (i) =>
+        Number.isFinite(i.basisBps) &&
         Math.abs(i.basisBps) > EXTREME_BASIS_BPS &&
         i.annualizedFundingPct !== null &&
+        Number.isFinite(i.annualizedFundingPct) &&
         Math.abs(i.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT
     )
     .sort((a, b) => Math.abs(b.basisBps) - Math.abs(a.basisBps));
@@ -298,6 +300,45 @@ function buildExecutableArbsSection(instruments) {
   return lines.join('\n');
 }
 
+function buildDislocationsSection(instruments) {
+  const basis = instruments
+    .filter((i) => Number.isFinite(i.basisBps) && Math.abs(i.basisBps) > EXTREME_BASIS_BPS)
+    .sort((a, b) => Math.abs(b.basisBps) - Math.abs(a.basisBps));
+
+  const funding = instruments
+    .filter(
+      (i) =>
+        i.annualizedFundingPct !== null &&
+        Number.isFinite(i.annualizedFundingPct) &&
+        Math.abs(i.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT
+    )
+    .sort((a, b) => Math.abs(b.annualizedFundingPct) - Math.abs(a.annualizedFundingPct));
+
+  const lines = [];
+  lines.push(`Dislocations (thresholds: |basis|>${EXTREME_BASIS_BPS}bps, |funding|>${EXTREME_FUNDING_APR_PCT}% ann.)`);
+
+  lines.push('Basis Dislocation');
+  if (basis.length === 0) {
+    lines.push('(none)');
+  } else {
+    for (const i of basis) {
+      lines.push(`- ${i.key} (${i.asset} @ ${i.dex}) | basis ${fmtBps(i.basisBps)}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('Funding Dislocation');
+  if (funding.length === 0) {
+    lines.push('(none)');
+  } else {
+    for (const i of funding) {
+      lines.push(`- ${i.key} (${i.asset} @ ${i.dex}) | funding ${fmtPct1(i.annualizedFundingPct)} ann.`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function categoryLabel(category) {
   // Keep this ASCII-friendly; some Telegram clients/font stacks can fail to render certain emoji.
   if (category === 'energy') return 'ENERGY';
@@ -309,6 +350,8 @@ function categoryLabel(category) {
 function buildAlert({ kind, emoji, instruments, splitHighOi = false, category = null }) {
   const lines = [];
   lines.push(`${emoji} ${kind} ${nowUtcHHMM()} | CATEGORY: ${categoryLabel(category)}`);
+  lines.push('');
+  lines.push(buildDislocationsSection(instruments));
   lines.push('');
   lines.push(buildExecutableArbsSection(instruments));
   lines.push('');
@@ -580,7 +623,7 @@ async function runOnce({
       const fundingTrigger = inst.annualizedFundingPct !== null && Math.abs(inst.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT;
 
       if (basisTrigger && nowMs - state.alerts[inst.key].basis_last_ms > DEDUPE_MS) {
-        const text = buildAlert({ kind: 'BASIS WIDE', emoji: '🔴', instruments: [inst] });
+        const text = buildAlert({ kind: 'BASIS DISLOCATION', emoji: '🔴', instruments: [inst] });
         try {
           await sendTelegram(text);
           state.alerts[inst.key].basis_last_ms = nowMs;
@@ -590,7 +633,7 @@ async function runOnce({
       }
 
       if (fundingTrigger && nowMs - state.alerts[inst.key].funding_last_ms > DEDUPE_MS) {
-        const text = buildAlert({ kind: 'FUNDING EXTREME', emoji: '🟡', instruments: [inst] });
+        const text = buildAlert({ kind: 'FUNDING DISLOCATION', emoji: '🟡', instruments: [inst] });
         try {
           await sendTelegram(text);
           state.alerts[inst.key].funding_last_ms = nowMs;
@@ -609,6 +652,7 @@ async function main() {
   const args = new Set(argv);
   const isTest = args.has('--test');
   const isDump = args.has('--dump');
+  const isOnce = args.has('--once');
 
   let category = null;
   const catIdx = argv.findIndex((a) => a === '--category');
@@ -630,6 +674,16 @@ async function main() {
       });
     } catch (e) {
       console.error(`[${new Date().toISOString()}] ${isDump ? '--dump' : '--test'} failed: ${e?.message || e}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (isOnce) {
+    try {
+      await runOnce({ category });
+    } catch (e) {
+      console.error(`[${new Date().toISOString()}] --once failed: ${e?.message || e}`);
       process.exitCode = 1;
     }
     return;
