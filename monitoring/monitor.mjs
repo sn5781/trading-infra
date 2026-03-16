@@ -20,6 +20,30 @@ const INSTRUMENTS = [
 const METALS_OI_HIGH_USD = 1_000_000;
 const METAL_PAT = /(GOLD|SILVER|COPPER|PLATINUM|URANIUM|PALLADIUM|ALUMINIUM|PAXG|XAUT|TGLD)/i;
 
+const COINS_LLAMA_URL = 'https://coins.llama.fi/prices/current';
+
+const CRYPTO_MAJORS = {
+  // Hyperliquid perps (main dex)
+  perps: [
+    { key: 'BTC-PERP', dex: 'main', asset: 'BTC' },
+    { key: 'ETH-PERP', dex: 'main', asset: 'ETH' },
+  ],
+  // On-chain wrappers (DefiLlama price endpoint)
+  // Prices are on-chain token prices in USD.
+  onchain: [
+    { key: 'WETH', chain: 'ethereum', address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', underlying: 'ETH' },
+    { key: 'stETH', chain: 'ethereum', address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84', underlying: 'ETH' },
+    { key: 'WBTC', chain: 'ethereum', address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', underlying: 'BTC' },
+    { key: 'tBTC', chain: 'ethereum', address: '0x18084fbA666a33d37592fA2633fD49a74DD93a88', underlying: 'BTC' },
+    // Coinbase Wrapped BTC (cbBTC) on Base
+    { key: 'cbBTC', chain: 'base', address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf', underlying: 'BTC' },
+  ],
+};
+
+// Extreme thresholds (global)
+const EXTREME_BASIS_BPS = 20;
+const EXTREME_FUNDING_APR_PCT = 20;
+
 function nowUtcHHMM() {
   const d = new Date();
   const hh = String(d.getUTCHours()).padStart(2, '0');
@@ -147,8 +171,8 @@ function extractAssetFromDex({ dex, universe, assetCtxs }, assetName) {
   };
 }
 
-function computeBasisBps(markPx, oraclePx) {
-  return ((markPx - oraclePx) / oraclePx) * 10_000;
+function computeBasisBps(a, b) {
+  return ((a - b) / b) * 10_000;
 }
 
 function computeAnnualizedFundingPctFromLoris(fundingRateRaw) {
@@ -169,6 +193,22 @@ function computeAnnualizedFundingPctFromHl(fundingRate) {
   // Hyperliquid funding is paid 3x/day (8h), so annualization matches the spec: rate * 3 * 365 * 100.
   if (fundingRate === null || fundingRate === undefined || Number.isNaN(fundingRate)) return null;
   return fundingRate * 3 * 365 * 100;
+}
+
+async function fetchDefiLlamaPrices(keys) {
+  // keys: [{chain, address}] -> returns Map<"chain:address", price>
+  const uniq = [...new Set(keys.map((k) => `${k.chain}:${k.address}`))];
+  if (uniq.length === 0) return new Map();
+  const url = `${COINS_LLAMA_URL}/${uniq.join(',')}`;
+  const j = await fetchJson(url, { timeoutMs: 10_000 });
+  const coins = j?.coins;
+  if (!coins || typeof coins !== 'object') throw new Error('Unexpected DefiLlama response shape');
+  const out = new Map();
+  for (const [k, v] of Object.entries(coins)) {
+    const p = Number.parseFloat(v?.price);
+    if (Number.isFinite(p)) out.set(k, p);
+  }
+  return out;
 }
 
 async function readState() {
@@ -235,7 +275,14 @@ function buildInstrumentBlock({ key, dex, asset, markPx, oraclePx, basisBps, fun
 
 function buildExecutableArbsSection(instruments) {
   const hits = instruments
-    .filter((i) => Math.abs(i.basisBps) > 20 && i.annualizedFundingPct !== null && Math.abs(i.annualizedFundingPct) > 40)
+    .filter(
+      (i) =>
+        Number.isFinite(i.basisBps) &&
+        Math.abs(i.basisBps) > EXTREME_BASIS_BPS &&
+        i.annualizedFundingPct !== null &&
+        Number.isFinite(i.annualizedFundingPct) &&
+        Math.abs(i.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT
+    )
     .sort((a, b) => Math.abs(b.basisBps) - Math.abs(a.basisBps));
 
   const lines = [];
@@ -253,16 +300,58 @@ function buildExecutableArbsSection(instruments) {
   return lines.join('\n');
 }
 
+function buildDislocationsSection(instruments) {
+  const basis = instruments
+    .filter((i) => Number.isFinite(i.basisBps) && Math.abs(i.basisBps) > EXTREME_BASIS_BPS)
+    .sort((a, b) => Math.abs(b.basisBps) - Math.abs(a.basisBps));
+
+  const funding = instruments
+    .filter(
+      (i) =>
+        i.annualizedFundingPct !== null &&
+        Number.isFinite(i.annualizedFundingPct) &&
+        Math.abs(i.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT
+    )
+    .sort((a, b) => Math.abs(b.annualizedFundingPct) - Math.abs(a.annualizedFundingPct));
+
+  const lines = [];
+  lines.push(`Dislocations (thresholds: |basis|>${EXTREME_BASIS_BPS}bps, |funding|>${EXTREME_FUNDING_APR_PCT}% ann.)`);
+
+  lines.push('Basis Dislocation');
+  if (basis.length === 0) {
+    lines.push('(none)');
+  } else {
+    for (const i of basis) {
+      lines.push(`- ${i.key} (${i.asset} @ ${i.dex}) | basis ${fmtBps(i.basisBps)}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('Funding Dislocation');
+  if (funding.length === 0) {
+    lines.push('(none)');
+  } else {
+    for (const i of funding) {
+      lines.push(`- ${i.key} (${i.asset} @ ${i.dex}) | funding ${fmtPct1(i.annualizedFundingPct)} ann.`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function categoryLabel(category) {
   // Keep this ASCII-friendly; some Telegram clients/font stacks can fail to render certain emoji.
   if (category === 'energy') return 'ENERGY';
   if (category === 'metals') return 'METALS';
+  if (category === 'crypto-majors') return 'CRYPTO-MAJORS';
   return 'ALL';
 }
 
 function buildAlert({ kind, emoji, instruments, splitHighOi = false, category = null }) {
   const lines = [];
   lines.push(`${emoji} ${kind} ${nowUtcHHMM()} | CATEGORY: ${categoryLabel(category)}`);
+  lines.push('');
+  lines.push(buildDislocationsSection(instruments));
   lines.push('');
   lines.push(buildExecutableArbsSection(instruments));
   lines.push('');
@@ -416,6 +505,66 @@ async function runOnce({
     }
   }
 
+  // Crypto majors (perps + on-chain wrappers)
+  if (category === null || category === 'crypto-majors') {
+    // Perps: BTC/ETH from main dex
+    const mainDex = dexData.main || mainDexData;
+    for (const p of CRYPTO_MAJORS.perps) {
+      const d = dexData[p.dex] || mainDex;
+      const out = extractAssetFromDex(d, p.asset);
+      const basisBps = computeBasisBps(out.markPx, out.oraclePx);
+      const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
+      const idx = d.universe.findIndex((a) => a?.name === out.asset);
+      const openInterest = Number.parseFloat(d.assetCtxs?.[idx]?.openInterest);
+      const oi = Number.isFinite(openInterest) ? openInterest : null;
+      const oiUsd = oi === null ? null : oi * out.markPx;
+      instruments.push({
+        key: p.key,
+        dex: out.dex,
+        asset: out.asset,
+        markPx: out.markPx,
+        oraclePx: out.oraclePx,
+        basisBps,
+        fundingRate: out.fundingRate,
+        annualizedFundingPct,
+        openInterest: oi,
+        oiUsd,
+        category: 'crypto-majors',
+      });
+    }
+
+    // On-chain wrappers priced in USD (DefiLlama)
+    const prices = await fetchDefiLlamaPrices(CRYPTO_MAJORS.onchain);
+
+    // Underlying USD references from HL oraclePx (BTC/ETH)
+    const btc = extractAssetFromDex(mainDex, 'BTC');
+    const eth = extractAssetFromDex(mainDex, 'ETH');
+    const underlying = {
+      BTC: btc.oraclePx,
+      ETH: eth.oraclePx,
+    };
+
+    for (const t of CRYPTO_MAJORS.onchain) {
+      const k = `${t.chain}:${t.address}`;
+      const px = prices.get(k) ?? null;
+      const under = underlying[t.underlying];
+      const basisBps = px === null ? null : computeBasisBps(px, under);
+      instruments.push({
+        key: t.key,
+        dex: t.chain,
+        asset: `${t.chain}:${t.address}`,
+        markPx: px === null ? NaN : px,
+        oraclePx: under,
+        basisBps: basisBps === null ? NaN : basisBps,
+        fundingRate: null,
+        annualizedFundingPct: null,
+        openInterest: null,
+        oiUsd: null,
+        category: 'crypto-majors',
+      });
+    }
+  }
+
   for (const inst of instruments) {
     logCycle({
       ts,
@@ -470,11 +619,11 @@ async function runOnce({
     }
   } else {
     for (const inst of instruments) {
-      const basisTrigger = Math.abs(inst.basisBps) > 200;
-      const fundingTrigger = inst.annualizedFundingPct !== null && Math.abs(inst.annualizedFundingPct) > 50;
+      const basisTrigger = Math.abs(inst.basisBps) > EXTREME_BASIS_BPS;
+      const fundingTrigger = inst.annualizedFundingPct !== null && Math.abs(inst.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT;
 
       if (basisTrigger && nowMs - state.alerts[inst.key].basis_last_ms > DEDUPE_MS) {
-        const text = buildAlert({ kind: 'BASIS WIDE', emoji: '🔴', instruments: [inst] });
+        const text = buildAlert({ kind: 'BASIS DISLOCATION', emoji: '🔴', instruments: [inst] });
         try {
           await sendTelegram(text);
           state.alerts[inst.key].basis_last_ms = nowMs;
@@ -484,7 +633,7 @@ async function runOnce({
       }
 
       if (fundingTrigger && nowMs - state.alerts[inst.key].funding_last_ms > DEDUPE_MS) {
-        const text = buildAlert({ kind: 'FUNDING EXTREME', emoji: '🟡', instruments: [inst] });
+        const text = buildAlert({ kind: 'FUNDING DISLOCATION', emoji: '🟡', instruments: [inst] });
         try {
           await sendTelegram(text);
           state.alerts[inst.key].funding_last_ms = nowMs;
@@ -503,12 +652,13 @@ async function main() {
   const args = new Set(argv);
   const isTest = args.has('--test');
   const isDump = args.has('--dump');
+  const isOnce = args.has('--once');
 
   let category = null;
   const catIdx = argv.findIndex((a) => a === '--category');
   if (catIdx !== -1) category = argv[catIdx + 1] || null;
-  if (category !== null && category !== 'energy' && category !== 'metals') {
-    console.error(`Invalid --category '${category}'. Use 'energy' or 'metals'.`);
+  if (category !== null && category !== 'energy' && category !== 'metals' && category !== 'crypto-majors') {
+    console.error(`Invalid --category '${category}'. Use 'energy', 'metals', or 'crypto-majors'.`);
     process.exitCode = 2;
     return;
   }
@@ -524,6 +674,16 @@ async function main() {
       });
     } catch (e) {
       console.error(`[${new Date().toISOString()}] ${isDump ? '--dump' : '--test'} failed: ${e?.message || e}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (isOnce) {
+    try {
+      await runOnce({ category });
+    } catch (e) {
+      console.error(`[${new Date().toISOString()}] --once failed: ${e?.message || e}`);
       process.exitCode = 1;
     }
     return;
