@@ -25,6 +25,7 @@ const METALS_OI_HIGH_USD = 1_000_000;
 const METAL_PAT = /(GOLD|SILVER|COPPER|PLATINUM|URANIUM|PALLADIUM|ALUMINIUM|PAXG|XAUT|TGLD)/i;
 
 const COINS_LLAMA_URL = 'https://coins.llama.fi/prices/current';
+const COW_QUOTE_URL = 'https://api.cow.fi/mainnet/api/v1/quote';
 
 const CRYPTO_MAJORS = {
   // Hyperliquid perps (main dex)
@@ -42,6 +43,16 @@ const CRYPTO_MAJORS = {
     // Coinbase Wrapped BTC (cbBTC) on Base
     { key: 'cbBTC', chain: 'base', address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf', underlying: 'BTC' },
   ],
+  // Executable spot (CowSwap) 5k USDC quotes for liquidity-aware basis
+  cowswap5k: {
+    tradeSizeUsdc: 5000,
+    usdc: { chain: 'ethereum', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 },
+    tokens: [
+      { key: 'WBTC', chain: 'ethereum', address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', decimals: 8, underlying: 'BTC' },
+      { key: 'WETH', chain: 'ethereum', address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18, underlying: 'ETH' },
+      { key: 'stETH', chain: 'ethereum', address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84', decimals: 18, underlying: 'ETH' },
+    ],
+  },
 };
 
 // Extreme thresholds (global)
@@ -227,6 +238,80 @@ async function fetchAllMids() {
   return j;
 }
 
+function pow10(n) {
+  let x = 1n;
+  for (let i = 0; i < n; i++) x *= 10n;
+  return x;
+}
+
+async function cowQuoteSell({ sellToken, buyToken, sellAmountBeforeFee }) {
+  const body = {
+    sellToken,
+    buyToken,
+    receiver: '0x0000000000000000000000000000000000000000',
+    from: '0x0000000000000000000000000000000000000000',
+    appData: '0x' + '0'.repeat(64),
+    partiallyFillable: false,
+    validTo: Math.floor(Date.now() / 1000) + 600,
+    kind: 'sell',
+    sellAmountBeforeFee: String(sellAmountBeforeFee),
+  };
+  return fetchJson(COW_QUOTE_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    timeoutMs: 10_000,
+  });
+}
+
+async function fetchCowSwap5kInstruments({ allMids }) {
+  const { tradeSizeUsdc, usdc, tokens } = CRYPTO_MAJORS.cowswap5k;
+  const usdcAmount = BigInt(Math.round(tradeSizeUsdc * 10 ** usdc.decimals));
+
+  const out = [];
+  for (const t of tokens) {
+    const ref = Number.parseFloat(allMids[t.underlying]);
+    if (!Number.isFinite(ref)) continue;
+
+    // BUY leg: 5k USDC -> token
+    const qBuy = await cowQuoteSell({ sellToken: usdc.address, buyToken: t.address, sellAmountBeforeFee: usdcAmount });
+    const buyAmountBuy = BigInt(qBuy.quote.buyAmount);
+    const buyTokens = Number(buyAmountBuy) / Number(pow10(t.decimals));
+    const pxBuy = tradeSizeUsdc / buyTokens;
+    const basisBuyBps = computeBasisBps(pxBuy, ref);
+
+    // SELL leg: token -> USDC, with token amount sized to ~5k notional using ref
+    const sellTokensTarget = tradeSizeUsdc / ref;
+    const sellAmountTokens = BigInt(Math.floor(sellTokensTarget * 10 ** t.decimals));
+    const qSell = await cowQuoteSell({ sellToken: t.address, buyToken: usdc.address, sellAmountBeforeFee: sellAmountTokens });
+    const buyAmountSell = BigInt(qSell.quote.buyAmount);
+    const usdcOut = Number(buyAmountSell) / 10 ** usdc.decimals;
+    const soldTokens = Number(sellAmountTokens) / Number(pow10(t.decimals));
+    const pxSell = usdcOut / soldTokens;
+    const basisSellBps = computeBasisBps(pxSell, ref);
+
+    const dir = basisBuyBps < 0 ? 'BUY' : 'SELL';
+    const execPx = dir === 'BUY' ? pxBuy : pxSell;
+    const execBasisBps = dir === 'BUY' ? basisBuyBps : basisSellBps;
+
+    out.push({
+      key: `${t.key}-COW5K-${dir}`,
+      dex: 'cowswap',
+      asset: `${t.chain}:${t.address}`,
+      markPx: execPx,
+      oraclePx: ref,
+      basisBps: execBasisBps,
+      fundingRate: null,
+      annualizedFundingPct: null,
+      openInterest: null,
+      oiUsd: null,
+      category: 'crypto',
+    });
+  }
+
+  return out;
+}
+
 async function readState() {
   try {
     const txt = await fs.readFile(LATEST_PATH, 'utf8');
@@ -410,8 +495,19 @@ function categoryLabel(category) {
   // Keep this ASCII-friendly; some Telegram clients/font stacks can fail to render certain emoji.
   if (category === 'energy') return 'ENERGY';
   if (category === 'metals') return 'METALS';
+  if (category === 'crypto') return 'CRYPTO';
+  if (category === 'elevated') return 'ELEVATED';
   if (category === 'crypto-majors') return 'CRYPTO-MAJORS';
   return 'ALL';
+}
+
+function categoryEmoji(category) {
+  // Per request; these may render differently depending on client.
+  if (category === 'energy') return '🛢️';
+  if (category === 'metals') return '🪙';
+  if (category === 'crypto') return '🧪';
+  if (category === 'elevated') return '🚨';
+  return '🧾';
 }
 
 function buildAlert({ kind, emoji, instruments, splitHighOi = false, category = null }) {
@@ -474,7 +570,8 @@ async function runOnce({
   alertKind = 'TEST ALERT',
   alertEmoji = '🧪',
   splitHighOi = false,
-  category = null, // 'energy' | 'metals' | null
+  category = null, // 'energy' | 'metals' | 'crypto' | null
+  splitReports = false,
 } = {}) {
   const ts = new Date().toISOString();
   const prev = await readState();
@@ -573,7 +670,7 @@ async function runOnce({
   }
 
   // Crypto majors (perps + on-chain wrappers)
-  if (category === null || category === 'crypto-majors') {
+  if (category === null || category === 'crypto' || category === 'crypto-majors') {
     // Perps: BTC/ETH from main dex
     const mainDex = dexData.main || mainDexData;
 
@@ -605,7 +702,7 @@ async function runOnce({
         annualizedFundingPct,
         openInterest: oi,
         oiUsd,
-        category: 'crypto-majors',
+        category: 'crypto',
       });
     }
 
@@ -628,9 +725,13 @@ async function runOnce({
         annualizedFundingPct: null,
         openInterest: null,
         oiUsd: null,
-        category: 'crypto-majors',
+        category: 'crypto',
       });
     }
+
+    // Executable spot (CowSwap) liquidity-aware pricing
+    const cowInst = await fetchCowSwap5kInstruments({ allMids: mids });
+    instruments.push(...cowInst);
   }
 
   for (const inst of instruments) {
@@ -678,15 +779,48 @@ async function runOnce({
   const nowMs = Date.now();
 
   if (forceTestAlert) {
-    const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi, category });
-    try {
+    const sendReport = async ({ cat, insts, splitOi }) => {
+      const text = buildAlert({
+        kind: alertKind,
+        emoji: categoryEmoji(cat),
+        instruments: insts,
+        splitHighOi: splitOi,
+        category: cat,
+      });
       await sendTelegramAndLog({
         text,
         eventType: 'monitor_report',
         kind: alertKind,
-        category,
-        instruments,
+        category: cat,
+        instruments: insts,
       });
+    };
+
+    try {
+      if (splitReports) {
+        const energy = instruments.filter((i) => i.category === 'energy');
+        const metals = instruments.filter((i) => i.category === 'metals');
+        const crypto = instruments.filter((i) => i.category === 'crypto');
+        const elevated = instruments.filter(
+          (i) =>
+            (Number.isFinite(i.basisBps) && Math.abs(i.basisBps) > EXTREME_BASIS_BPS) ||
+            (i.annualizedFundingPct !== null && Number.isFinite(i.annualizedFundingPct) && Math.abs(i.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT)
+        );
+
+        await sendReport({ cat: 'energy', insts: energy, splitOi: false });
+        await sendReport({ cat: 'metals', insts: metals, splitOi: true });
+        await sendReport({ cat: 'crypto', insts: crypto, splitOi: false });
+        await sendReport({ cat: 'elevated', insts: elevated, splitOi: false });
+      } else {
+        const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi, category });
+        await sendTelegramAndLog({
+          text,
+          eventType: 'monitor_report',
+          kind: alertKind,
+          category,
+          instruments,
+        });
+      }
       console.log(`[${ts}] Sent test alert`);
     } catch (e) {
       console.error(`[${ts}] Telegram send failed (test): ${e?.message || e}`);
@@ -743,8 +877,14 @@ async function main() {
   let category = null;
   const catIdx = argv.findIndex((a) => a === '--category');
   if (catIdx !== -1) category = argv[catIdx + 1] || null;
-  if (category !== null && category !== 'energy' && category !== 'metals' && category !== 'crypto-majors') {
-    console.error(`Invalid --category '${category}'. Use 'energy', 'metals', or 'crypto-majors'.`);
+  if (
+    category !== null &&
+    category !== 'energy' &&
+    category !== 'metals' &&
+    category !== 'crypto' &&
+    category !== 'crypto-majors'
+  ) {
+    console.error(`Invalid --category '${category}'. Use 'energy', 'metals', 'crypto', or 'crypto-majors'.`);
     process.exitCode = 2;
     return;
   }
@@ -756,6 +896,7 @@ async function main() {
         alertKind: isDump ? 'DAILY REPORT' : 'TEST ALERT',
         alertEmoji: isDump ? '🧾' : '🧪',
         splitHighOi: true,
+        splitReports: true,
         category,
       });
     } catch (e) {
