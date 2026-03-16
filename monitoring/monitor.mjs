@@ -8,6 +8,7 @@ dotenv.config({ path: new URL('.env', import.meta.url) });
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 
 const DATA_DIR = path.resolve('./data');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
 const LATEST_PATH = path.join(DATA_DIR, 'basis-latest.json');
 
 const POLL_MS = 15 * 60_000;
@@ -242,6 +243,16 @@ async function writeLatest(obj) {
   await fs.rename(tmp, LATEST_PATH);
 }
 
+function utcYyyyMmDd(ms = Date.now()) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+async function appendEventNdjson(obj) {
+  await fs.mkdir(LOG_DIR, { recursive: true });
+  const p = path.join(LOG_DIR, `events-${utcYyyyMmDd(obj.E)}.ndjson`);
+  await fs.appendFile(p, JSON.stringify(obj) + '\n', 'utf8');
+}
+
 async function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -260,6 +271,47 @@ async function sendTelegram(text) {
     body: JSON.stringify(body),
     timeoutMs: 10_000,
   });
+}
+
+async function sendTelegramAndLog({
+  text,
+  eventType,
+  kind,
+  category,
+  instruments,
+}) {
+  // Binance-style-ish envelope: {e, E, s, ...}
+  const E = Date.now();
+  const base = {
+    e: eventType, // e.g. monitor_report / monitor_alert
+    E, // event time (unix ms)
+    kind,
+    category: categoryLabel(category),
+  };
+
+  const payload = {
+    ...base,
+    instruments: (instruments || []).map((i) => ({
+      s: i.key,
+      asset: i.asset,
+      dex: i.dex,
+      markPx: Number.isFinite(i.markPx) ? String(i.markPx) : null,
+      refPx: Number.isFinite(i.oraclePx) ? String(i.oraclePx) : null,
+      basisBps: Number.isFinite(i.basisBps) ? String(i.basisBps) : null,
+      fundingRate: i.fundingRate === null || i.fundingRate === undefined || Number.isNaN(i.fundingRate) ? null : String(i.fundingRate),
+      fundingAprPct: i.annualizedFundingPct === null || i.annualizedFundingPct === undefined || Number.isNaN(i.annualizedFundingPct) ? null : String(i.annualizedFundingPct),
+      oiUsd: i.oiUsd === null || i.oiUsd === undefined || Number.isNaN(i.oiUsd) ? null : String(i.oiUsd),
+    })),
+  };
+
+  try {
+    await sendTelegram(text);
+    await appendEventNdjson({ ...payload, status: 'sent' });
+  } catch (err) {
+    const msg = err?.message || String(err);
+    await appendEventNdjson({ ...payload, status: 'error', error: msg.slice(0, 300) });
+    throw err;
+  }
 }
 
 function fundingRawStr(fundingRate) {
@@ -628,7 +680,13 @@ async function runOnce({
   if (forceTestAlert) {
     const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi, category });
     try {
-      await sendTelegram(text);
+      await sendTelegramAndLog({
+        text,
+        eventType: 'monitor_report',
+        kind: alertKind,
+        category,
+        instruments,
+      });
       console.log(`[${ts}] Sent test alert`);
     } catch (e) {
       console.error(`[${ts}] Telegram send failed (test): ${e?.message || e}`);
@@ -641,7 +699,13 @@ async function runOnce({
       if (basisTrigger && nowMs - state.alerts[inst.key].basis_last_ms > DEDUPE_MS) {
         const text = buildAlert({ kind: 'BASIS DISLOCATION', emoji: '🔴', instruments: [inst] });
         try {
-          await sendTelegram(text);
+          await sendTelegramAndLog({
+            text,
+            eventType: 'monitor_alert',
+            kind: 'BASIS DISLOCATION',
+            category,
+            instruments: [inst],
+          });
           state.alerts[inst.key].basis_last_ms = nowMs;
         } catch (e) {
           console.error(`[${ts}] Telegram send failed (basis ${inst.key}): ${e?.message || e}`);
@@ -651,7 +715,13 @@ async function runOnce({
       if (fundingTrigger && nowMs - state.alerts[inst.key].funding_last_ms > DEDUPE_MS) {
         const text = buildAlert({ kind: 'FUNDING DISLOCATION', emoji: '🟡', instruments: [inst] });
         try {
-          await sendTelegram(text);
+          await sendTelegramAndLog({
+            text,
+            eventType: 'monitor_alert',
+            kind: 'FUNDING DISLOCATION',
+            category,
+            instruments: [inst],
+          });
           state.alerts[inst.key].funding_last_ms = nowMs;
         } catch (e) {
           console.error(`[${ts}] Telegram send failed (funding ${inst.key}): ${e?.message || e}`);
