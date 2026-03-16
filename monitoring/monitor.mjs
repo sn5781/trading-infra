@@ -7,7 +7,7 @@ const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 const DATA_DIR = path.resolve('./data');
 const LATEST_PATH = path.join(DATA_DIR, 'basis-latest.json');
 
-const POLL_MS = 30_000;
+const POLL_MS = 15 * 60_000;
 const DEDUPE_MS = 10 * 60_000;
 
 const INSTRUMENTS = [
