@@ -211,6 +211,18 @@ async function fetchDefiLlamaPrices(keys) {
   return out;
 }
 
+async function fetchAllMids() {
+  const payload = { type: 'allMids' };
+  const j = await fetchJson(HL_INFO_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+    timeoutMs: 10_000,
+  });
+  if (!j || typeof j !== 'object') throw new Error('Unexpected allMids response shape');
+  return j;
+}
+
 async function readState() {
   try {
     const txt = await fs.readFile(LATEST_PATH, 'utf8');
@@ -509,10 +521,19 @@ async function runOnce({
   if (category === null || category === 'crypto-majors') {
     // Perps: BTC/ETH from main dex
     const mainDex = dexData.main || mainDexData;
+
+    // Use HL allMids for crypto reference (spot-like mid), per request.
+    const mids = await fetchAllMids();
+    const underlying = {
+      BTC: Number.parseFloat(mids.BTC),
+      ETH: Number.parseFloat(mids.ETH),
+    };
+
     for (const p of CRYPTO_MAJORS.perps) {
       const d = dexData[p.dex] || mainDex;
       const out = extractAssetFromDex(d, p.asset);
-      const basisBps = computeBasisBps(out.markPx, out.oraclePx);
+      const ref = underlying[out.asset];
+      const basisBps = Number.isFinite(ref) ? computeBasisBps(out.markPx, ref) : computeBasisBps(out.markPx, out.oraclePx);
       const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
       const idx = d.universe.findIndex((a) => a?.name === out.asset);
       const openInterest = Number.parseFloat(d.assetCtxs?.[idx]?.openInterest);
@@ -523,7 +544,7 @@ async function runOnce({
         dex: out.dex,
         asset: out.asset,
         markPx: out.markPx,
-        oraclePx: out.oraclePx,
+        oraclePx: Number.isFinite(ref) ? ref : out.oraclePx,
         basisBps,
         fundingRate: out.fundingRate,
         annualizedFundingPct,
@@ -535,14 +556,6 @@ async function runOnce({
 
     // On-chain wrappers priced in USD (DefiLlama)
     const prices = await fetchDefiLlamaPrices(CRYPTO_MAJORS.onchain);
-
-    // Underlying USD references from HL oraclePx (BTC/ETH)
-    const btc = extractAssetFromDex(mainDex, 'BTC');
-    const eth = extractAssetFromDex(mainDex, 'ETH');
-    const underlying = {
-      BTC: btc.oraclePx,
-      ETH: eth.oraclePx,
-    };
 
     for (const t of CRYPTO_MAJORS.onchain) {
       const k = `${t.chain}:${t.address}`;
