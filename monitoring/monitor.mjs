@@ -224,12 +224,11 @@ function fmtOiUsd(x) {
 
 function buildInstrumentBlock({ key, dex, asset, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct, openInterest, oiUsd }) {
   const lines = [];
-  lines.push(`${key} (${asset} @ ${dex})`);
-  lines.push(`Mark: ${fmtUsd(markPx)} | Oracle: ${fmtUsd(oraclePx)}`);
-  lines.push(`Basis: ${fmtBps(basisBps)}`);
-  lines.push(`Funding: ${fundingRawStr(fundingRate)} | ${fmtPct1(annualizedFundingPct)} ann.`);
+  lines.push(`- ${key}  (${asset} @ ${dex})`);
+  lines.push(`  Mark ${fmtUsd(markPx)} | Oracle ${fmtUsd(oraclePx)} | Basis ${fmtBps(basisBps)}`);
+  lines.push(`  Funding ${fundingRawStr(fundingRate)}  (${fmtPct1(annualizedFundingPct)} ann.)`);
   if (openInterest !== null && openInterest !== undefined && Number.isFinite(openInterest)) {
-    lines.push(`OI: ${openInterest.toFixed(4)} | Notional: ${fmtOiUsd(oiUsd)}`);
+    lines.push(`  OI Notional ${fmtOiUsd(oiUsd)}  (OI ${openInterest.toFixed(4)})`);
   }
   return lines.join('\n');
 }
@@ -255,14 +254,15 @@ function buildExecutableArbsSection(instruments) {
 }
 
 function categoryLabel(category) {
-  if (category === 'energy') return '🛢️ ENERGY';
-  if (category === 'metals') return '⛏️ METALS';
-  return '🌐 ALL';
+  // Keep this ASCII-friendly; some Telegram clients/font stacks can fail to render certain emoji.
+  if (category === 'energy') return 'ENERGY';
+  if (category === 'metals') return 'METALS';
+  return 'ALL';
 }
 
 function buildAlert({ kind, emoji, instruments, splitHighOi = false, category = null }) {
   const lines = [];
-  lines.push(`${emoji} ${kind} ${nowUtcHHMM()} — ${categoryLabel(category)}`);
+  lines.push(`${emoji} ${kind} ${nowUtcHHMM()} | CATEGORY: ${categoryLabel(category)}`);
   lines.push('');
   lines.push(buildExecutableArbsSection(instruments));
   lines.push('');
