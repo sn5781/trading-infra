@@ -224,12 +224,11 @@ function fmtOiUsd(x) {
 
 function buildInstrumentBlock({ key, dex, asset, markPx, oraclePx, basisBps, fundingRate, annualizedFundingPct, openInterest, oiUsd }) {
   const lines = [];
-  lines.push(`${key} (${asset} @ ${dex})`);
-  lines.push(`Mark: ${fmtUsd(markPx)} | Oracle: ${fmtUsd(oraclePx)}`);
-  lines.push(`Basis: ${fmtBps(basisBps)}`);
-  lines.push(`Funding: ${fundingRawStr(fundingRate)} | ${fmtPct1(annualizedFundingPct)} ann.`);
+  lines.push(`- ${key}  (${asset} @ ${dex})`);
+  lines.push(`  Mark ${fmtUsd(markPx)} | Oracle ${fmtUsd(oraclePx)} | Basis ${fmtBps(basisBps)}`);
+  lines.push(`  Funding ${fundingRawStr(fundingRate)}  (${fmtPct1(annualizedFundingPct)} ann.)`);
   if (openInterest !== null && openInterest !== undefined && Number.isFinite(openInterest)) {
-    lines.push(`OI: ${openInterest.toFixed(4)} | Notional: ${fmtOiUsd(oiUsd)}`);
+    lines.push(`  OI Notional ${fmtOiUsd(oiUsd)}  (OI ${openInterest.toFixed(4)})`);
   }
   return lines.join('\n');
 }
@@ -254,9 +253,16 @@ function buildExecutableArbsSection(instruments) {
   return lines.join('\n');
 }
 
-function buildAlert({ kind, emoji, instruments, splitHighOi = false }) {
+function categoryLabel(category) {
+  // Keep this ASCII-friendly; some Telegram clients/font stacks can fail to render certain emoji.
+  if (category === 'energy') return 'ENERGY';
+  if (category === 'metals') return 'METALS';
+  return 'ALL';
+}
+
+function buildAlert({ kind, emoji, instruments, splitHighOi = false, category = null }) {
   const lines = [];
-  lines.push(`${emoji} ${kind} ${nowUtcHHMM()}`);
+  lines.push(`${emoji} ${kind} ${nowUtcHHMM()} | CATEGORY: ${categoryLabel(category)}`);
   lines.push('');
   lines.push(buildExecutableArbsSection(instruments));
   lines.push('');
@@ -307,7 +313,13 @@ function logCycle({ ts, key, markPx, oraclePx, basisBps, fundingRate, annualized
   console.log(parts.join(' | '));
 }
 
-async function runOnce({ forceTestAlert = false, alertKind = 'TEST ALERT', alertEmoji = '🧪', splitHighOi = false } = {}) {
+async function runOnce({
+  forceTestAlert = false,
+  alertKind = 'TEST ALERT',
+  alertEmoji = '🧪',
+  splitHighOi = false,
+  category = null, // 'energy' | 'metals' | null
+} = {}) {
   const ts = new Date().toISOString();
   const prev = await readState();
 
@@ -338,66 +350,70 @@ async function runOnce({ forceTestAlert = false, alertKind = 'TEST ALERT', alert
   const instruments = [];
 
   // Energy instruments (explicit)
-  for (const i of INSTRUMENTS) {
-    const d = dexData[i.dex];
-    const asset = process.env[`HL_ASSET_${i.key}`] || i.asset;
-    const out = extractAssetFromDex(d, asset);
-    const basisBps = computeBasisBps(out.markPx, out.oraclePx);
-    const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
-    const openInterest = Number.parseFloat(d.assetCtxs?.[d.universe.findIndex((a) => a?.name === out.asset)]?.openInterest);
-    const oi = Number.isFinite(openInterest) ? openInterest : null;
-    const oiUsd = oi === null ? null : oi * out.markPx;
-    instruments.push({
-      key: i.key,
-      dex: out.dex,
-      asset: out.asset,
-      markPx: out.markPx,
-      oraclePx: out.oraclePx,
-      basisBps,
-      fundingRate: out.fundingRate,
-      annualizedFundingPct,
-      openInterest: oi,
-      oiUsd,
-      category: 'energy',
-    });
+  if (category === null || category === 'energy') {
+    for (const i of INSTRUMENTS) {
+      const d = dexData[i.dex];
+      const asset = process.env[`HL_ASSET_${i.key}`] || i.asset;
+      const out = extractAssetFromDex(d, asset);
+      const basisBps = computeBasisBps(out.markPx, out.oraclePx);
+      const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
+      const openInterest = Number.parseFloat(d.assetCtxs?.[d.universe.findIndex((a) => a?.name === out.asset)]?.openInterest);
+      const oi = Number.isFinite(openInterest) ? openInterest : null;
+      const oiUsd = oi === null ? null : oi * out.markPx;
+      instruments.push({
+        key: i.key,
+        dex: out.dex,
+        asset: out.asset,
+        markPx: out.markPx,
+        oraclePx: out.oraclePx,
+        basisBps,
+        fundingRate: out.fundingRate,
+        annualizedFundingPct,
+        openInterest: oi,
+        oiUsd,
+        category: 'energy',
+      });
+    }
   }
 
   // Metals (discovered)
-  const metalRows = [];
-  for (const [dexName, assets] of metalByDex.entries()) {
-    for (const asset of assets) metalRows.push({ dex: dexName, asset });
-  }
-  for (const asset of mainMetalAssets) metalRows.push({ dex: 'main', asset });
+  if (category === null || category === 'metals') {
+    const metalRows = [];
+    for (const [dexName, assets] of metalByDex.entries()) {
+      for (const asset of assets) metalRows.push({ dex: dexName, asset });
+    }
+    for (const asset of mainMetalAssets) metalRows.push({ dex: 'main', asset });
 
-  // Dedup (same dex+asset)
-  const seen = new Set();
-  for (const m of metalRows) {
-    const k = `${m.dex}|${m.asset}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
+    // Dedup (same dex+asset)
+    const seen = new Set();
+    for (const m of metalRows) {
+      const k = `${m.dex}|${m.asset}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
 
-    const d = dexData[m.dex];
-    if (!d) continue;
-    const out = extractAssetFromDex(d, m.asset);
-    const basisBps = computeBasisBps(out.markPx, out.oraclePx);
-    const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
-    const idx = d.universe.findIndex((a) => a?.name === out.asset);
-    const openInterest = Number.parseFloat(d.assetCtxs?.[idx]?.openInterest);
-    const oi = Number.isFinite(openInterest) ? openInterest : null;
-    const oiUsd = oi === null ? null : oi * out.markPx;
-    instruments.push({
-      key: out.asset,
-      dex: out.dex,
-      asset: out.asset,
-      markPx: out.markPx,
-      oraclePx: out.oraclePx,
-      basisBps,
-      fundingRate: out.fundingRate,
-      annualizedFundingPct,
-      openInterest: oi,
-      oiUsd,
-      category: 'metals',
-    });
+      const d = dexData[m.dex];
+      if (!d) continue;
+      const out = extractAssetFromDex(d, m.asset);
+      const basisBps = computeBasisBps(out.markPx, out.oraclePx);
+      const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
+      const idx = d.universe.findIndex((a) => a?.name === out.asset);
+      const openInterest = Number.parseFloat(d.assetCtxs?.[idx]?.openInterest);
+      const oi = Number.isFinite(openInterest) ? openInterest : null;
+      const oiUsd = oi === null ? null : oi * out.markPx;
+      instruments.push({
+        key: out.asset,
+        dex: out.dex,
+        asset: out.asset,
+        markPx: out.markPx,
+        oraclePx: out.oraclePx,
+        basisBps,
+        fundingRate: out.fundingRate,
+        annualizedFundingPct,
+        openInterest: oi,
+        oiUsd,
+        category: 'metals',
+      });
+    }
   }
 
   for (const inst of instruments) {
@@ -445,7 +461,7 @@ async function runOnce({ forceTestAlert = false, alertKind = 'TEST ALERT', alert
   const nowMs = Date.now();
 
   if (forceTestAlert) {
-    const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi });
+    const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi, category });
     try {
       await sendTelegram(text);
       console.log(`[${ts}] Sent test alert`);
@@ -483,17 +499,28 @@ async function runOnce({ forceTestAlert = false, alertKind = 'TEST ALERT', alert
 }
 
 async function main() {
-  const args = new Set(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const args = new Set(argv);
   const isTest = args.has('--test');
   const isDump = args.has('--dump');
+
+  let category = null;
+  const catIdx = argv.findIndex((a) => a === '--category');
+  if (catIdx !== -1) category = argv[catIdx + 1] || null;
+  if (category !== null && category !== 'energy' && category !== 'metals') {
+    console.error(`Invalid --category '${category}'. Use 'energy' or 'metals'.`);
+    process.exitCode = 2;
+    return;
+  }
 
   if (isTest || isDump) {
     try {
       await runOnce({
         forceTestAlert: true,
-        alertKind: isDump ? 'DAILY DUMP' : 'TEST ALERT',
+        alertKind: isDump ? 'DAILY REPORT' : 'TEST ALERT',
         alertEmoji: isDump ? '🧾' : '🧪',
         splitHighOi: true,
+        category,
       });
     } catch (e) {
       console.error(`[${new Date().toISOString()}] ${isDump ? '--dump' : '--test'} failed: ${e?.message || e}`);
