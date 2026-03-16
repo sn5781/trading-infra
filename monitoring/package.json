@@ -9,6 +9,7 @@
     "start": "node monitor.mjs",
     "test-alert": "node monitor.mjs --test",
     "dump": "node monitor.mjs --dump",
-    "sync-logs": "node sync-logs.mjs"
+    "sync-logs": "node sync-logs.mjs",
+    "compare-spot": "node compare-spot.mjs"
   }
 }
