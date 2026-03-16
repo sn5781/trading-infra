@@ -307,7 +307,7 @@ function logCycle({ ts, key, markPx, oraclePx, basisBps, fundingRate, annualized
   console.log(parts.join(' | '));
 }
 
-async function runOnce({ forceTestAlert = false } = {}) {
+async function runOnce({ forceTestAlert = false, alertKind = 'TEST ALERT', alertEmoji = '🧪', splitHighOi = false } = {}) {
   const ts = new Date().toISOString();
   const prev = await readState();
 
@@ -445,7 +445,7 @@ async function runOnce({ forceTestAlert = false } = {}) {
   const nowMs = Date.now();
 
   if (forceTestAlert) {
-    const text = buildAlert({ kind: 'TEST ALERT', emoji: '🧪', instruments, splitHighOi: true });
+    const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi });
     try {
       await sendTelegram(text);
       console.log(`[${ts}] Sent test alert`);
@@ -485,12 +485,18 @@ async function runOnce({ forceTestAlert = false } = {}) {
 async function main() {
   const args = new Set(process.argv.slice(2));
   const isTest = args.has('--test');
+  const isDump = args.has('--dump');
 
-  if (isTest) {
+  if (isTest || isDump) {
     try {
-      await runOnce({ forceTestAlert: true });
+      await runOnce({
+        forceTestAlert: true,
+        alertKind: isDump ? 'DAILY DUMP' : 'TEST ALERT',
+        alertEmoji: isDump ? '🧾' : '🧪',
+        splitHighOi: true,
+      });
     } catch (e) {
-      console.error(`[${new Date().toISOString()}] --test failed: ${e?.message || e}`);
+      console.error(`[${new Date().toISOString()}] ${isDump ? '--dump' : '--test'} failed: ${e?.message || e}`);
       process.exitCode = 1;
     }
     return;
