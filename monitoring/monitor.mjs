@@ -1,6 +1,9 @@
-import 'dotenv/config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import dotenv from 'dotenv';
+
+// Always load env from monitoring/.env (not the caller's cwd).
+dotenv.config({ path: new URL('.env', import.meta.url) });
 
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 
