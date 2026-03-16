@@ -254,9 +254,15 @@ function buildExecutableArbsSection(instruments) {
   return lines.join('\n');
 }
 
-function buildAlert({ kind, emoji, instruments, splitHighOi = false }) {
+function categoryLabel(category) {
+  if (category === 'energy') return '🛢️ ENERGY';
+  if (category === 'metals') return '⛏️ METALS';
+  return '🌐 ALL';
+}
+
+function buildAlert({ kind, emoji, instruments, splitHighOi = false, category = null }) {
   const lines = [];
-  lines.push(`${emoji} ${kind} ${nowUtcHHMM()}`);
+  lines.push(`${emoji} ${kind} ${nowUtcHHMM()} — ${categoryLabel(category)}`);
   lines.push('');
   lines.push(buildExecutableArbsSection(instruments));
   lines.push('');
@@ -455,7 +461,7 @@ async function runOnce({
   const nowMs = Date.now();
 
   if (forceTestAlert) {
-    const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi });
+    const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi, category });
     try {
       await sendTelegram(text);
       console.log(`[${ts}] Sent test alert`);
@@ -511,7 +517,7 @@ async function main() {
     try {
       await runOnce({
         forceTestAlert: true,
-        alertKind: isDump ? 'DAILY DUMP' : 'TEST ALERT',
+        alertKind: isDump ? 'DAILY REPORT' : 'TEST ALERT',
         alertEmoji: isDump ? '🧾' : '🧪',
         splitHighOi: true,
         category,
