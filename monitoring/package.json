@@ -10,6 +10,7 @@
     "test-alert": "node monitor.mjs --test",
     "dump": "node monitor.mjs --dump",
     "sync-logs": "node sync-logs.mjs",
-    "compare-spot": "node compare-spot.mjs"
+    "compare-spot": "node compare-spot.mjs",
+    "tbtc-arb": "node tbtc-arb.mjs"
   }
 }
