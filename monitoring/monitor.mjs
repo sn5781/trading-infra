@@ -59,11 +59,15 @@ const CRYPTO_MAJORS = {
 const EXTREME_BASIS_BPS = 20;
 const EXTREME_FUNDING_APR_PCT = 20;
 
-function nowUtcHHMM() {
+function nowUtcStamp() {
+  // e.g. 2026-03-16 21:53 UTC
   const d = new Date();
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
   const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${hh}:${mm} UTC`;
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi} UTC`;
 }
 
 function fmtUsd(x) {
@@ -512,7 +516,7 @@ function categoryEmoji(category) {
 
 function buildAlert({ kind, emoji, instruments, splitHighOi = false, category = null }) {
   const lines = [];
-  lines.push(`${emoji} ${kind} ${nowUtcHHMM()} | CATEGORY: ${categoryLabel(category)}`);
+  lines.push(`${emoji} ${kind} ${nowUtcStamp()} | CATEGORY: ${categoryLabel(category)}`);
   lines.push('');
   lines.push(buildDislocationsSection(instruments));
   lines.push('');
