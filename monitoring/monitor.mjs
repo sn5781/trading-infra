@@ -59,15 +59,25 @@ const CRYPTO_MAJORS = {
 const EXTREME_BASIS_BPS = 20;
 const EXTREME_FUNDING_APR_PCT = 20;
 
-function nowUtcStamp() {
+function nowUtcStamp(ms = Date.now()) {
   // e.g. 2026-03-16 21:53 UTC
-  const d = new Date();
+  const d = new Date(ms);
   const yyyy = d.getUTCFullYear();
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(d.getUTCDate()).padStart(2, '0');
   const hh = String(d.getUTCHours()).padStart(2, '0');
   const mi = String(d.getUTCMinutes()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd} ${hh}:${mi} UTC`;
+}
+
+function fmtCommaInt(x) {
+  if (x === null || x === undefined || Number.isNaN(x) || !Number.isFinite(x)) return 'n/a';
+  return Math.round(x).toLocaleString('en-US');
+}
+
+function fmtUsd0(x) {
+  if (x === null || x === undefined || Number.isNaN(x) || !Number.isFinite(x)) return 'n/a';
+  return `$${Math.round(x).toLocaleString('en-US')}`;
 }
 
 function fmtUsd(x) {
@@ -342,6 +352,131 @@ async function appendEventNdjson(obj) {
   await fs.appendFile(p, JSON.stringify(obj) + '\n', 'utf8');
 }
 
+async function readEventNdjsonSince(sinceMs) {
+  // Read only relevant daily files (today + yesterday, plus edge case if >24h crosses date boundary).
+  const days = new Set([utcYyyyMmDd(Date.now()), utcYyyyMmDd(Date.now() - 24 * 60 * 60 * 1000)]);
+  const events = [];
+  for (const day of days) {
+    const p = path.join(LOG_DIR, `events-${day}.ndjson`);
+    let txt;
+    try {
+      txt = await fs.readFile(p, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const line of txt.split('\n')) {
+      if (!line.trim()) continue;
+      let j;
+      try {
+        j = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!j.E || j.E < sinceMs) continue;
+      events.push(j);
+    }
+  }
+  return events;
+}
+
+function getDislocationStats(events) {
+  const sinceMs = Math.min(...events.map((e) => e.E));
+  const out = {
+    sinceMs: Number.isFinite(sinceMs) ? sinceMs : null,
+    countsByEvent: {},
+    countsByKind: {},
+    basis: { n: 0, avgAbsBps: null, maxAbsBps: null, top: [] },
+    funding: { n: 0, avgAbsApr: null, maxAbsApr: null, top: [] },
+    severe: { basis_n: 0, funding_n: 0 },
+  };
+
+  const basisMags = [];
+  const fundingMags = [];
+
+  for (const ev of events) {
+    out.countsByEvent[ev.e] = (out.countsByEvent[ev.e] || 0) + 1;
+    if (ev.kind) out.countsByKind[ev.kind] = (out.countsByKind[ev.kind] || 0) + 1;
+
+    if (ev.e !== 'monitor_alert') continue;
+
+    const inst = Array.isArray(ev.instruments) ? ev.instruments : [];
+    for (const i of inst) {
+      const s = i?.s;
+      const basisBps = i?.basisBps !== null && i?.basisBps !== undefined ? Number.parseFloat(i.basisBps) : null;
+      const fundingApr = i?.fundingAprPct !== null && i?.fundingAprPct !== undefined ? Number.parseFloat(i.fundingAprPct) : null;
+
+      if (ev.kind === 'BASIS DISLOCATION' && Number.isFinite(basisBps)) {
+        const mag = Math.abs(basisBps);
+        basisMags.push(mag);
+        out.basis.top.push({ mag, s, ts: ev.E, basisBps });
+        if (mag >= 50) out.severe.basis_n++;
+      }
+      if (ev.kind === 'FUNDING DISLOCATION' && Number.isFinite(fundingApr)) {
+        const mag = Math.abs(fundingApr);
+        fundingMags.push(mag);
+        out.funding.top.push({ mag, s, ts: ev.E, fundingAprPct: fundingApr });
+        if (mag >= 50) out.severe.funding_n++;
+      }
+    }
+  }
+
+  const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+  const max = (arr) => (arr.length ? Math.max(...arr) : null);
+
+  out.basis.n = basisMags.length;
+  out.basis.avgAbsBps = avg(basisMags);
+  out.basis.maxAbsBps = max(basisMags);
+  out.basis.top.sort((a, b) => b.mag - a.mag);
+  out.basis.top = out.basis.top.slice(0, 5);
+
+  out.funding.n = fundingMags.length;
+  out.funding.avgAbsApr = avg(fundingMags);
+  out.funding.maxAbsApr = max(fundingMags);
+  out.funding.top.sort((a, b) => b.mag - a.mag);
+  out.funding.top = out.funding.top.slice(0, 5);
+
+  return out;
+}
+
+function buildDailyDislocationSummaryText(stats, { lookbackHours = 24 } = {}) {
+  const lines = [];
+  lines.push(`📈 LAST ${lookbackHours}H SUMMARY ${nowUtcStamp()}`);
+
+  lines.push('');
+  lines.push('EVENT COUNTS');
+  for (const [k, v] of Object.entries(stats.countsByEvent).sort()) {
+    lines.push(`- ${k}: ${fmtCommaInt(v)}`);
+  }
+
+  lines.push('');
+  lines.push('ALERT COUNTS (monitor_alert.kind)');
+  for (const [k, v] of Object.entries(stats.countsByKind).sort()) {
+    lines.push(`- ${k}: ${fmtCommaInt(v)}`);
+  }
+
+  lines.push('');
+  lines.push(`BASIS DISLOCATIONS: n=${fmtCommaInt(stats.basis.n)} avg_abs=${stats.basis.avgAbsBps ? stats.basis.avgAbsBps.toFixed(1) : 'n/a'} bps max_abs=${stats.basis.maxAbsBps ? stats.basis.maxAbsBps.toFixed(1) : 'n/a'} bps`);
+  lines.push(`- severe(|basis|>=50bps): ${fmtCommaInt(stats.severe.basis_n)}`);
+  if (stats.basis.top.length) {
+    lines.push('- top outliers:');
+    for (const t of stats.basis.top) {
+      lines.push(`  - ${t.s} | ${t.basisBps.toFixed(1)} bps | ${nowUtcStamp(t.ts)}`);
+    }
+  }
+
+  lines.push('');
+  lines.push(`FUNDING DISLOCATIONS: n=${fmtCommaInt(stats.funding.n)} avg_abs=${stats.funding.avgAbsApr ? stats.funding.avgAbsApr.toFixed(1) : 'n/a'}% max_abs=${stats.funding.maxAbsApr ? stats.funding.maxAbsApr.toFixed(1) : 'n/a'}%`);
+  lines.push(`- severe(|funding|>=50%): ${fmtCommaInt(stats.severe.funding_n)}`);
+  if (stats.funding.top.length) {
+    lines.push('- top outliers:');
+    for (const t of stats.funding.top) {
+      lines.push(`  - ${t.s} | ${t.fundingAprPct.toFixed(1)}% | ${nowUtcStamp(t.ts)}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 async function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -502,6 +637,7 @@ function categoryLabel(category) {
   if (category === 'crypto') return 'CRYPTO';
   if (category === 'elevated') return 'ELEVATED';
   if (category === 'crypto-majors') return 'CRYPTO-MAJORS';
+  if (category === 'summary') return 'SUMMARY';
   return 'ALL';
 }
 
@@ -815,6 +951,21 @@ async function runOnce({
         await sendReport({ cat: 'metals', insts: metals, splitOi: true });
         await sendReport({ cat: 'crypto', insts: crypto, splitOi: false });
         await sendReport({ cat: 'elevated', insts: elevated, splitOi: false });
+
+        // Daily dump: append a 24h summary of dislocation alerts + event breakdown.
+        if (alertKind === 'DAILY REPORT') {
+          const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
+          const events = await readEventNdjsonSince(sinceMs);
+          const stats = getDislocationStats(events);
+          const summaryText = buildDailyDislocationSummaryText(stats, { lookbackHours: 24 });
+          await sendTelegramAndLog({
+            text: summaryText,
+            eventType: 'monitor_report',
+            kind: 'DAILY SUMMARY',
+            category: 'summary',
+            instruments: [],
+          });
+        }
       } else {
         const text = buildAlert({ kind: alertKind, emoji: alertEmoji, instruments, splitHighOi, category });
         await sendTelegramAndLog({
