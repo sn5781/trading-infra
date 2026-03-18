@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const LOG_DIR = path.resolve('./data/logs');
-const OUT_DIR = path.resolve('./site');
+const LOG_DIR = process.env.LOG_DIR ? path.resolve(process.env.LOG_DIR) : path.resolve('./data/logs');
+const OUT_DIR = process.env.OUT_DIR ? path.resolve(process.env.OUT_DIR) : path.resolve('./site');
 const OUT_PATH = path.join(OUT_DIR, 'index.html');
 
 function utcStamp(ms) {

@@ -1,0 +1,74 @@
+name: dislocations-gh-pages
+
+on:
+  schedule:
+    # Every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dislocations-gh-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Checkout logs branch (contains NDJSON)
+        run: |
+          git fetch origin logs:refs/remotes/origin/logs || true
+          rm -rf /tmp/logs-branch
+          git worktree add /tmp/logs-branch origin/logs
+
+      - name: Generate HTML from last-24h logs
+        run: |
+          cd monitoring
+          # logs branch stores logs under logs/monitoring/...
+          export LOG_DIR=/tmp/logs-branch/logs/monitoring/data/logs
+          export OUT_DIR=/tmp/site
+          node render-last24h.mjs
+          test -f /tmp/site/index.html
+
+      - name: Publish to gh-pages branch
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages:refs/remotes/origin/gh-pages || true
+
+          rm -rf /tmp/gh-pages
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git worktree add /tmp/gh-pages origin/gh-pages
+          else
+            # Create orphan gh-pages branch
+            git worktree add /tmp/gh-pages --detach
+            cd /tmp/gh-pages
+            git checkout --orphan gh-pages
+            rm -rf . || true
+          fi
+
+          cd /tmp/gh-pages
+          rm -rf ./*
+          cp /tmp/site/index.html ./index.html
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update dislocations dashboard"
+          git push origin HEAD:gh-pages
