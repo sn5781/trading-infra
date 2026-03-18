@@ -11,7 +11,11 @@ const DATA_DIR = path.resolve('./data');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const LATEST_PATH = path.join(DATA_DIR, 'basis-latest.json');
 
-const POLL_MS = 15 * 60_000;
+// Default scan cadence (quiet): every 20 minutes.
+// When any dislocation is detected, temporarily increase cadence to every 5 minutes
+// until the market is back within thresholds.
+const POLL_MS_QUIET = 20 * 60_000;
+const POLL_MS_HOT = 5 * 60_000;
 const DEDUPE_MS = 10 * 60_000;
 
 const INSTRUMENTS = [
@@ -134,6 +138,133 @@ async function fetchHyperliquidDexMetaAndCtxs(dex) {
   if (!Array.isArray(universe) || !Array.isArray(assetCtxs)) throw new Error('Unexpected Hyperliquid meta/universe shape');
 
   return { dex: dex || 'main', universe, assetCtxs };
+}
+
+function roundTo(x, dp) {
+  if (x === null || x === undefined || Number.isNaN(x) || !Number.isFinite(x)) return null;
+  const m = 10 ** dp;
+  return Math.round(x * m) / m;
+}
+
+function pickTopLevels(levels, n = 3) {
+  const out = [];
+  for (const lvl of (levels || []).slice(0, n)) {
+    const px = Number.parseFloat(lvl?.px);
+    const sz = Number.parseFloat(lvl?.sz);
+    const nn = lvl?.n ?? null;
+    out.push({ px: roundTo(px, 6), sz: roundTo(sz, 6), n: typeof nn === 'number' ? nn : null });
+  }
+  return out;
+}
+
+async function fetchL2Book({ coin, dex }) {
+  const payload = { type: 'l2Book', coin };
+  // Non-main perpdexes require dex selection (HIP-3, etc.).
+  if (dex && dex !== 'main') payload.dex = dex;
+
+  const j = await fetchJson(HL_INFO_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+    timeoutMs: 10_000,
+  });
+
+  const levels = j?.levels;
+  if (!Array.isArray(levels) || levels.length < 2) throw new Error(`Unexpected l2Book response for ${coin}`);
+  return { coin: j.coin, time: j.time, bids: levels[0], asks: levels[1] };
+}
+
+function summarizeBookSideToBps({ levels, refPx, side, bpsList }) {
+  // levels: [{px,sz,n}, ...] ordered best->worse
+  // Depth is measured within +/-bps around refPx (we use mid), but always includes the top level.
+  const out = {};
+  const top = (levels || [])[0];
+  const topPx = top ? Number.parseFloat(top?.px) : null;
+  const topSz = top ? Number.parseFloat(top?.sz) : null;
+  const topN = top?.n ?? null;
+
+  for (const bps of bpsList) {
+    const limitPx = side === 'bids'
+      ? refPx * (1 - bps / 10_000)
+      : refPx * (1 + bps / 10_000);
+
+    let qty = 0;
+    let notional = 0;
+    let nSum = 0;
+    let levelsCount = 0;
+
+    for (const lvl of levels || []) {
+      const px = Number.parseFloat(lvl?.px);
+      const sz = Number.parseFloat(lvl?.sz);
+      const nn = typeof lvl?.n === 'number' ? lvl.n : 0;
+      if (!Number.isFinite(px) || !Number.isFinite(sz)) continue;
+      if (side === 'bids') {
+        if (px < limitPx) break;
+      } else {
+        if (px > limitPx) break;
+      }
+      qty += sz;
+      notional += px * sz;
+      nSum += nn;
+      levelsCount += 1;
+    }
+
+    // Ensure top-of-book is always represented even if spread > bps bucket.
+    if (levelsCount === 0 && Number.isFinite(topPx) && Number.isFinite(topSz)) {
+      qty = topSz;
+      notional = topPx * topSz;
+      nSum = typeof topN === 'number' ? topN : 0;
+      levelsCount = 1;
+    }
+
+    out[`${bps}bps`] = {
+      limitPx: roundTo(limitPx, 6),
+      qty: roundTo(qty, 6),
+      // HL px is USD-quoted in practice; keep name stable for downstream.
+      notionalUsd: roundTo(notional, 2),
+      levels: levelsCount,
+      nSum,
+    };
+  }
+  return out;
+}
+
+function summarizeL2Book(book, { bpsList = [10, 25, 50] } = {}) {
+  const bestBid = Number.parseFloat(book?.bids?.[0]?.px);
+  const bestAsk = Number.parseFloat(book?.asks?.[0]?.px);
+  const bestBidSz = Number.parseFloat(book?.bids?.[0]?.sz);
+  const bestAskSz = Number.parseFloat(book?.asks?.[0]?.sz);
+
+  if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk) || bestBid <= 0 || bestAsk <= 0) {
+    return { coin: book?.coin || null, time: book?.time || null, error: 'missing_top' };
+  }
+
+  const mid = (bestBid + bestAsk) / 2;
+  const spreadBps = ((bestAsk - bestBid) / mid) * 10_000;
+
+  const bidSide = {
+    bestPx: roundTo(bestBid, 6),
+    bestSz: Number.isFinite(bestBidSz) ? roundTo(bestBidSz, 6) : null,
+    top: pickTopLevels(book.bids, 3),
+    depth: summarizeBookSideToBps({ levels: book.bids, refPx: mid, side: 'bids', bpsList }),
+  };
+
+  const askSide = {
+    bestPx: roundTo(bestAsk, 6),
+    bestSz: Number.isFinite(bestAskSz) ? roundTo(bestAskSz, 6) : null,
+    top: pickTopLevels(book.asks, 3),
+    depth: summarizeBookSideToBps({ levels: book.asks, refPx: mid, side: 'asks', bpsList }),
+  };
+
+  return {
+    coin: book.coin,
+    time: book.time,
+    mid: roundTo(mid, 6),
+    spreadBps: roundTo(spreadBps, 3),
+    bpsList,
+    bids: bidSide,
+    asks: askSide,
+  };
 }
 
 async function fetchPerpDexs() {
@@ -525,6 +656,7 @@ async function sendTelegramAndLog({
       fundingRate: i.fundingRate === null || i.fundingRate === undefined || Number.isNaN(i.fundingRate) ? null : String(i.fundingRate),
       fundingAprPct: i.annualizedFundingPct === null || i.annualizedFundingPct === undefined || Number.isNaN(i.annualizedFundingPct) ? null : String(i.annualizedFundingPct),
       oiUsd: i.oiUsd === null || i.oiUsd === undefined || Number.isNaN(i.oiUsd) ? null : String(i.oiUsd),
+      book: i.bookSummary || null,
     })),
   };
 
@@ -918,6 +1050,13 @@ async function runOnce({
 
   const nowMs = Date.now();
 
+  // Track whether any instrument is currently in dislocation, regardless of alert dedupe.
+  const anyDislocationNow = instruments.some(
+    (i) =>
+      (Number.isFinite(i.basisBps) && Math.abs(i.basisBps) > EXTREME_BASIS_BPS) ||
+      (i.annualizedFundingPct !== null && Number.isFinite(i.annualizedFundingPct) && Math.abs(i.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT)
+  );
+
   if (forceTestAlert) {
     const sendReport = async ({ cat, insts, splitOi }) => {
       const text = buildAlert({
@@ -1004,12 +1143,22 @@ async function runOnce({
       if (fundingTrigger && nowMs - state.alerts[inst.key].funding_last_ms > DEDUPE_MS) {
         const text = buildAlert({ kind: 'FUNDING DISLOCATION', emoji: '🟡', instruments: [inst] });
         try {
+          // Condensed order book snapshot for later microstructure analysis.
+          // Use inst.asset for HIP-3 (e.g. xyz:CL) and native perps (e.g. BTC).
+          let bookSummary = null;
+          try {
+            const book = await fetchL2Book({ coin: inst.asset, dex: inst.dex });
+            bookSummary = summarizeL2Book(book);
+          } catch (e2) {
+            bookSummary = { coin: inst.asset, dex: inst.dex, error: `l2Book_failed:${e2?.message || e2}`.slice(0, 160) };
+          }
+
           await sendTelegramAndLog({
             text,
             eventType: 'monitor_alert',
             kind: 'FUNDING DISLOCATION',
             category,
-            instruments: [inst],
+            instruments: [{ ...inst, bookSummary }],
           });
           state.alerts[inst.key].funding_last_ms = nowMs;
         } catch (e) {
@@ -1020,6 +1169,7 @@ async function runOnce({
   }
 
   await writeLatest(state);
+  return { anyDislocationNow };
 }
 
 async function main() {
@@ -1071,20 +1221,20 @@ async function main() {
     return;
   }
 
-  let running = false;
+  let hot = false;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    if (!running) {
-      running = true;
-      runOnce()
-        .catch((e) => {
-          console.error(`[${new Date().toISOString()}] cycle failed: ${e?.message || e}`);
-        })
-        .finally(() => {
-          running = false;
-        });
+    try {
+      const res = await runOnce({ category });
+      hot = !!res?.anyDislocationNow;
+    } catch (e) {
+      console.error(`[${new Date().toISOString()}] cycle failed: ${e?.message || e}`);
+      // On failure, stay on quiet cadence.
+      hot = false;
     }
-    await new Promise((r) => setTimeout(r, POLL_MS));
+
+    const sleepMs = hot ? POLL_MS_HOT : POLL_MS_QUIET;
+    await new Promise((r) => setTimeout(r, sleepMs));
   }
 }
 
