@@ -36,8 +36,8 @@ jobs:
       - name: Generate HTML from last-24h logs
         run: |
           cd monitoring
-          # logs branch stores logs under logs/monitoring/...
-          export LOG_DIR=/tmp/logs-branch/logs/monitoring/data/logs
+          # logs branch stores NDJSON under logs/monitoring/events-YYYY-MM-DD.ndjson
+          export LOG_DIR=/tmp/logs-branch/logs/monitoring
           export OUT_DIR=/tmp/site
           node render-last24h.mjs
           test -f /tmp/site/index.html
