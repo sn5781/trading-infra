@@ -11,7 +11,11 @@ const DATA_DIR = path.resolve('./data');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const LATEST_PATH = path.join(DATA_DIR, 'basis-latest.json');
 
-const POLL_MS = 15 * 60_000;
+// Default scan cadence (quiet): every 20 minutes.
+// When any dislocation is detected, temporarily increase cadence to every 5 minutes
+// until the market is back within thresholds.
+const POLL_MS_QUIET = 20 * 60_000;
+const POLL_MS_HOT = 5 * 60_000;
 const DEDUPE_MS = 10 * 60_000;
 
 const INSTRUMENTS = [
@@ -1046,6 +1050,13 @@ async function runOnce({
 
   const nowMs = Date.now();
 
+  // Track whether any instrument is currently in dislocation, regardless of alert dedupe.
+  const anyDislocationNow = instruments.some(
+    (i) =>
+      (Number.isFinite(i.basisBps) && Math.abs(i.basisBps) > EXTREME_BASIS_BPS) ||
+      (i.annualizedFundingPct !== null && Number.isFinite(i.annualizedFundingPct) && Math.abs(i.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT)
+  );
+
   if (forceTestAlert) {
     const sendReport = async ({ cat, insts, splitOi }) => {
       const text = buildAlert({
@@ -1158,6 +1169,7 @@ async function runOnce({
   }
 
   await writeLatest(state);
+  return { anyDislocationNow };
 }
 
 async function main() {
@@ -1209,20 +1221,20 @@ async function main() {
     return;
   }
 
-  let running = false;
+  let hot = false;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    if (!running) {
-      running = true;
-      runOnce()
-        .catch((e) => {
-          console.error(`[${new Date().toISOString()}] cycle failed: ${e?.message || e}`);
-        })
-        .finally(() => {
-          running = false;
-        });
+    try {
+      const res = await runOnce({ category });
+      hot = !!res?.anyDislocationNow;
+    } catch (e) {
+      console.error(`[${new Date().toISOString()}] cycle failed: ${e?.message || e}`);
+      // On failure, stay on quiet cadence.
+      hot = false;
     }
-    await new Promise((r) => setTimeout(r, POLL_MS));
+
+    const sleepMs = hot ? POLL_MS_HOT : POLL_MS_QUIET;
+    await new Promise((r) => setTimeout(r, sleepMs));
   }
 }
 
