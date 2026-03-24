@@ -26,7 +26,7 @@ const INSTRUMENTS = [
 ];
 
 const METALS_OI_HIGH_USD = 1_000_000;
-const METAL_PAT = /(GOLD|SILVER|COPPER|PLATINUM|URANIUM|PALLADIUM|ALUMINIUM|PAXG|XAUT|TGLD)/i;
+const METAL_PAT = /(GOLD|SILVER|COPPER|PLATINUM|URANIUM|URNM|PALLADIUM|ALUMINIUM|PAXG|XAUT|TGLD)/i;
 
 const COINS_LLAMA_URL = 'https://coins.llama.fi/prices/current';
 const COW_QUOTE_URL = 'https://api.cow.fi/mainnet/api/v1/quote';
@@ -62,6 +62,19 @@ const CRYPTO_MAJORS = {
 // Extreme thresholds (global)
 const EXTREME_BASIS_BPS = 20;
 const EXTREME_FUNDING_APR_PCT = 20;
+
+// Exclude dormant / zero-OI markets from monitoring output to reduce noise.
+// (These are still visible on HL UI but not useful for dislocation monitoring.)
+const EXCLUDE_ASSETS = new Set([
+  // Consistently 0 OI markets (dormant):
+  'hyna:GOLD',
+  'hyna:SILVER',
+  'vntl:GOLDJM',
+  'vntl:SILVERJM',
+  'xyz:ALUMINIUM',
+  // Legacy uranium ticker (canonical is xyz:URNM):
+  'xyz:URANIUM',
+]);
 
 function nowUtcStamp(ms = Date.now()) {
   // e.g. 2026-03-16 21:53 UTC
@@ -280,6 +293,30 @@ async function fetchPerpDexs() {
   return j.slice(1); // first element is null
 }
 
+const ASSET_ALIASES_BY_DEX = {
+  // HL UI uses xyz:URNM for uranium (not xyz:URANIUM). Our metal discovery may surface URANIUM.
+  xyz: {
+    URANIUM: 'URNM',
+  },
+};
+
+function normalizeAssetNameForDex(dexName, asset) {
+  const raw = String(asset || '');
+  const map = ASSET_ALIASES_BY_DEX?.[dexName];
+  if (!map) return raw;
+
+  // Handle both bare symbols ("URANIUM") and prefixed ("xyz:URANIUM").
+  if (raw.includes(':')) {
+    const [pfx, sym] = raw.split(':', 2);
+    const repl = map[sym];
+    if (repl) return `${pfx}:${repl}`;
+    return raw;
+  }
+
+  if (map[raw]) return map[raw];
+  return raw;
+}
+
 function discoverMetalAssetsFromPerpDexs(perpDexs) {
   // Returns: Map<dexName, Set<assetCode>>
   const m = new Map();
@@ -287,8 +324,9 @@ function discoverMetalAssetsFromPerpDexs(perpDexs) {
     const dexName = dex?.name;
     const caps = dex?.assetToStreamingOiCap;
     if (!dexName || !Array.isArray(caps)) continue;
-    for (const [asset] of caps) {
-      if (typeof asset !== 'string') continue;
+    for (const [assetRaw] of caps) {
+      if (typeof assetRaw !== 'string') continue;
+      const asset = normalizeAssetNameForDex(dexName, assetRaw);
       if (!METAL_PAT.test(asset)) continue;
       if (!m.has(dexName)) m.set(dexName, new Set());
       m.get(dexName).add(asset);
@@ -912,13 +950,22 @@ async function runOnce({
     // Dedup (same dex+asset)
     const seen = new Set();
     for (const m of metalRows) {
-      const k = `${m.dex}|${m.asset}`;
+      const resolvedAsset = normalizeAssetNameForDex(m.dex, m.asset);
+      const k = `${m.dex}|${resolvedAsset}`;
       if (seen.has(k)) continue;
       seen.add(k);
 
       const d = dexData[m.dex];
       if (!d) continue;
-      const out = extractAssetFromDex(d, m.asset);
+
+      // After resolution, drop any legacy alias entries (e.g. URANIUM vs URNM) so we only report the canonical symbol.
+      if (m.asset !== resolvedAsset && d.universe.some((a) => a?.name === resolvedAsset)) {
+        continue;
+      }
+
+      // Some HIP-3 assets have short tickers on UI (e.g. xyz:URNM) while discovery may surface older names.
+      const out = extractAssetFromDex(d, resolvedAsset);
+      if (EXCLUDE_ASSETS.has(out.asset)) continue;
       const basisBps = computeBasisBps(out.markPx, out.oraclePx);
       const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
       const idx = d.universe.findIndex((a) => a?.name === out.asset);
