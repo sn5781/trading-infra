@@ -63,6 +63,20 @@ const CRYPTO_MAJORS = {
 const EXTREME_BASIS_BPS = 20;
 const EXTREME_FUNDING_APR_PCT = 20;
 
+// Exclude dormant / zero-OI markets from monitoring output to reduce noise.
+// (These are still visible on HL UI but not useful for dislocation monitoring.)
+const EXCLUDE_ASSETS = new Set([
+  'hyna:SILVER',
+]);
+
+// Used only for proposals (not auto-excluded) — markets observed with p90(OI USD) < $100k in logs.
+const LOW_OI_PROPOSAL = [
+  'xyz:ALUMINIUM',
+  'xyz:URANIUM',
+  'vntl:GOLDJM',
+  'vntl:SILVERJM',
+];
+
 function nowUtcStamp(ms = Date.now()) {
   // e.g. 2026-03-16 21:53 UTC
   const d = new Date(ms);
@@ -919,6 +933,7 @@ async function runOnce({
       const d = dexData[m.dex];
       if (!d) continue;
       const out = extractAssetFromDex(d, m.asset);
+      if (EXCLUDE_ASSETS.has(out.asset)) continue;
       const basisBps = computeBasisBps(out.markPx, out.oraclePx);
       const annualizedFundingPct = computeAnnualizedFundingPctFromHl(out.fundingRate);
       const idx = d.universe.findIndex((a) => a?.name === out.asset);
