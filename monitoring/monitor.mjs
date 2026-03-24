@@ -66,10 +66,14 @@ const EXTREME_FUNDING_APR_PCT = 20;
 // Exclude dormant / zero-OI markets from monitoring output to reduce noise.
 // (These are still visible on HL UI but not useful for dislocation monitoring.)
 const EXCLUDE_ASSETS = new Set([
+  // Consistently 0 OI markets (dormant):
+  'hyna:GOLD',
   'hyna:SILVER',
-  'xyz:ALUMINIUM',
   'vntl:GOLDJM',
   'vntl:SILVERJM',
+  'xyz:ALUMINIUM',
+  // Legacy uranium ticker (canonical is xyz:URNM):
+  'xyz:URANIUM',
 ]);
 
 function nowUtcStamp(ms = Date.now()) {
