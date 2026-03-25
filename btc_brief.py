@@ -112,26 +112,37 @@ def coinglass_walls_v2(spot):
   shorts.sort(key=lambda x:x[1],reverse=True); longs.sort(key=lambda x:x[1],reverse=True)
   return {"shorts":shorts[:3],"longs":longs[:3]}
 
-def coinglass_walls_v4(spot):
+def coinglass_model2_levels(spot, *, exchange='Binance', symbol='BTCUSDT', range_='4h'):
+  """CoinGlass liquidation levels derived from model2 heatmap.
+
+  Endpoint requires explicit exchange/symbol/range.
+  We aggregate all leverage buckets into total USD per price level.
+  """
   key=os.environ.get("COINGLASS_API_KEY")
   if not key: raise RuntimeError("COINGLASS_API_KEY not set")
-  # v4 expects CG-API-KEY; free keys may return {code:401,msg:"Upgrade plan"}
-  j=g(f"{COINGLASS_V4}/api/futures/liquidation/map",headers={"CG-API-KEY":key},params={"symbol":"BTC","time_type":"3"},timeout=25)
-  # v4 often returns {code,msg,data}
-  if isinstance(j,dict) and str(j.get("code")) != "0":
-    raise RuntimeError(j.get("msg") or f"CoinGlass v4 error code {j.get('code')}")
-  data=j.get("data") or {}
-  sm, lm=data.get("shortLiqMap") or {}, data.get("longLiqMap") or {}
-  def parse(m):
-    if not isinstance(m,dict): return []
-    out=[]
-    for k,v in m.items():
-      px,amt=f(k),f(v)
-      if px is not None and amt is not None: out.append((px,amt))
-    return out
-  shorts=[(px,amt) for px,amt in parse(sm) if spot<px<=spot*1.10]; longs=[(px,amt) for px,amt in parse(lm) if spot*0.90<=px<spot]
-  shorts.sort(key=lambda x:x[1],reverse=True); longs.sort(key=lambda x:x[1],reverse=True)
-  return {"shorts":shorts[:3],"longs":longs[:3]}
+  j=g(
+    f"{COINGLASS_V4}/api/futures/liquidation/heatmap/model2",
+    headers={"CG-API-KEY":key},
+    params={"exchange":exchange,"symbol":symbol,"range":range_},
+    timeout=30,
+  )
+  if isinstance(j,dict) and str(j.get('code'))!='0':
+    raise RuntimeError(j.get('msg') or f"CoinGlass error code {j.get('code')}")
+  d=(j.get('data') or {})
+  y=d.get('y_axis') or []
+  pts=d.get('liquidation_leverage_data') or []
+  agg={}
+  for p in pts:
+    if not isinstance(p,list) or len(p)<3: continue
+    yi=int(p[1]); amt=f(p[2])
+    if amt is None or yi<0 or yi>=len(y): continue
+    px=f(y[yi])
+    if px is None: continue
+    agg[px]=agg.get(px,0.0)+amt
+  above=[(px,amt) for px,amt in agg.items() if spot<px<=spot*1.10]
+  below=[(px,amt) for px,amt in agg.items() if spot*0.90<=px<spot]
+  above.sort(key=lambda x:x[1],reverse=True); below.sort(key=lambda x:x[1],reverse=True)
+  return {"shorts":above[:3],"longs":below[:3],"meta":{ "exchange":exchange, "symbol":symbol, "range":range_ }}
 
 def okx_realized_liq_clusters(spot, *, limit=100):
   # Public realized liquidation events; we build a proxy "walls" histogram.
@@ -230,7 +241,7 @@ def render(ts,spot,hl,liq,okxliq,fr,ar,errs):
 </div>
 <div class=g>
   <div class=c><div class=h>Liquidation &amp; Perps</div><div class=sg>
-    <div><div class=muted style=\"margin-bottom:6px\">Source: CoinGlass (liq map, 30d)</div>
+    <div><div class=muted style=\"margin-bottom:6px\">Source: CoinGlass (model2 liquidation levels)</div>
       <div class=muted style=\"margin-bottom:6px\">Short above spot</div>{liq_rows((liq or {}).get('shorts'))}
       <div class=muted style=\"margin-bottom:6px; margin-top:8px\">Long below spot</div>{liq_rows((liq or {}).get('longs'))}
     </div>
@@ -261,10 +272,10 @@ def main():
   liq=None; okxliq=None
   if spot["BTC"]["price"] is not None:
     spotpx=spot["BTC"]["price"]
-    # Keep old CoinGlass section but prefer v4 (gives definitive "Upgrade plan" when gated).
-    liq=safe(errs,"coinglass",lambda: coinglass_walls_v4(spotpx))
+    # CoinGlass: model2 heatmap-derived liquidation levels (requires exchange param)
+    liq=safe(errs,"coinglass",lambda: coinglass_model2_levels(spotpx, exchange='Binance', symbol='BTCUSDT', range_='4h'))
     if liq is None:
-      # If v4 fails for non-plan reasons, fall back to v2 (may 500).
+      # Fallback to older v2 map endpoint if model2 not accessible
       liq=safe(errs,"coinglass_v2",lambda: coinglass_walls_v2(spotpx)) or liq
     # Alt feed always attempted (free)
     okxliq=safe(errs,"okx_liq",lambda: okx_realized_liq_clusters(spotpx))
