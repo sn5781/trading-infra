@@ -6,9 +6,17 @@ All sections degrade gracefully ("—") on failure.
 
 import html, os, time, requests
 
-BIN_SPOT="https://api.binance.com"; BIN_FUT="https://fapi.binance.com"; BYBIT="https://api.bybit.com"; OKX="https://www.okx.com"; HL="https://api.hyperliquid.xyz/info"; COINGLASS="https://open-api.coinglass.com"; OUT=os.path.join("btc_brief","index.html")
+BIN_SPOT="https://api.binance.com"; BIN_SPOT_FALLBACK="https://data-api.binance.vision"  # common mirror
+BIN_FUT="https://fapi.binance.com"; BIN_FUT_FALLBACK="https://fapi.binance.com"  # keep slot for future mirrors
+BYBIT="https://api.bybit.com"; OKX="https://www.okx.com"; HL="https://api.hyperliquid.xyz/info"; COINGLASS="https://open-api.coinglass.com"; OUT=os.path.join("btc_brief","index.html")
 
-def g(url,params=None,headers=None,timeout=12): r=requests.get(url,params=params,headers=headers,timeout=timeout); r.raise_for_status(); return r.json()
+UA={"User-Agent":"btc-brief/1.0","accept":"application/json"}
+
+def g(url,params=None,headers=None,timeout=12):
+  h=dict(UA); 
+  if headers: h.update(headers)
+  r=requests.get(url,params=params,headers=h,timeout=timeout)
+  r.raise_for_status(); return r.json()
 
 def p(url,body=None,headers=None,timeout=12): r=requests.post(url,json=body,headers=headers,timeout=timeout); r.raise_for_status(); return r.json()
 
@@ -33,10 +41,19 @@ def safe(errs,k,fn):
   except Exception as e: errs[k]=str(e); return None
 
 def bin_spot(sym):
-  t=g(f"{BIN_SPOT}/api/v3/ticker/24hr",params={"symbol":sym}); last=f(t.get("lastPrice")); ch24=f(t.get("priceChangePercent"))
-  kl=g(f"{BIN_SPOT}/api/v3/klines",params={"symbol":sym,"interval":"1d","limit":8}); old=f(kl[0][1]) if isinstance(kl,list) and kl else None
-  ch7=((last-old)/old*100) if (last is not None and old not in (None,0)) else None
-  return {"price":last,"24h":ch24,"7d":ch7}
+  # Binance sometimes blocks GH Actions IPs. Try main host then a common mirror.
+  bases=[BIN_SPOT,BIN_SPOT_FALLBACK]
+  last=ch24=ch7=None
+  last_err=None
+  for base in bases:
+    try:
+      t=g(f"{base}/api/v3/ticker/24hr",params={"symbol":sym}); last=f(t.get("lastPrice")); ch24=f(t.get("priceChangePercent"))
+      kl=g(f"{base}/api/v3/klines",params={"symbol":sym,"interval":"1d","limit":8}); old=f(kl[0][1]) if isinstance(kl,list) and kl else None
+      ch7=((last-old)/old*100) if (last is not None and old not in (None,0)) else None
+      return {"price":last,"24h":ch24,"7d":ch7}
+    except Exception as e:
+      last_err=e
+  raise last_err
 
 def hl_ctx():
   meta,ctxs=p(HL,body={"type":"metaAndAssetCtxs"},headers={"Content-Type":"application/json"},timeout=15); uni=meta.get("universe",[])
@@ -48,14 +65,33 @@ def hl_ctx():
 
 def funding(hl):
   out={a:{"Binance":None,"Bybit":None,"OKX":None,"Hyperliquid":(hl.get(a) or {}).get("fund_8h")} for a in ("BTC","ETH")}
-  j=g(f"{BIN_FUT}/fapi/v1/premiumIndex",timeout=12)
-  if isinstance(j,list):
-    for r in j:
-      if r.get("symbol")=="BTCUSDT": out["BTC"]["Binance"]=(f(r.get("lastFundingRate")) or 0.0)*100
-      if r.get("symbol")=="ETHUSDT": out["ETH"]["Binance"]=(f(r.get("lastFundingRate")) or 0.0)*100
+
+  # Binance futures (try main host; keep fallback slot)
+  last_err=None
+  for base in (BIN_FUT,BIN_FUT_FALLBACK):
+    try:
+      j=g(f"{base}/fapi/v1/premiumIndex",timeout=12)
+      if isinstance(j,list):
+        for r in j:
+          if r.get("symbol")=="BTCUSDT": out["BTC"]["Binance"]=(f(r.get("lastFundingRate")) or 0.0)*100
+          if r.get("symbol")=="ETHUSDT": out["ETH"]["Binance"]=(f(r.get("lastFundingRate")) or 0.0)*100
+      break
+    except Exception as e:
+      last_err=e
+
+  # Bybit / OKX (best-effort)
   for a in ("BTC","ETH"):
-    jb=g(f"{BYBIT}/v5/market/tickers",params={"category":"linear","symbol":f"{a}USDT"},timeout=12); out[a]["Bybit"]=(f(((jb.get("result") or {}).get("list") or [{}])[0].get("fundingRate"))*100) if jb else None
-    jo=g(f"{OKX}/api/v5/public/funding-rate",params={"instId":f"{a}-USDT-SWAP"},timeout=12); out[a]["OKX"]=(f(((jo.get("data") or [{}])[0].get("fundingRate"))*100) if jo else None)
+    try:
+      jb=g(f"{BYBIT}/v5/market/tickers",params={"category":"linear","symbol":f"{a}USDT"},timeout=12)
+      out[a]["Bybit"]=(f(((jb.get("result") or {}).get("list") or [{}])[0].get("fundingRate"))*100) if jb else None
+    except Exception:
+      pass
+    try:
+      jo=g(f"{OKX}/api/v5/public/funding-rate",params={"instId":f"{a}-USDT-SWAP"},timeout=12)
+      out[a]["OKX"]=(f(((jo.get("data") or [{}])[0].get("fundingRate"))*100) if jo else None)
+    except Exception:
+      pass
+
   return out
 
 def coinglass_walls(spot):
