@@ -36,11 +36,14 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git fetch origin gh-pages:gh-pages
-          git checkout gh-pages
 
-          mkdir -p btc_brief
-          cp /tmp/btc_brief_index.html btc_brief/index.html
+          rm -rf /tmp/gh-pages
+          git worktree add /tmp/gh-pages gh-pages
 
+          mkdir -p /tmp/gh-pages/btc_brief
+          cp /tmp/btc_brief_index.html /tmp/gh-pages/btc_brief/index.html
+
+          cd /tmp/gh-pages
           git add btc_brief/index.html
           git diff --cached --quiet || git commit -m "chore: daily BTC brief $(date -u +%Y-%m-%d)"
           git push origin gh-pages
