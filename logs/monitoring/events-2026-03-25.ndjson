@@ -1,0 +1,1 @@
+{"e":"monitor_alert","E":1774396879923,"kind":"BASIS DISLOCATION","category":"ALL","instruments":[{"s":"xyz:URNM","asset":"xyz:URNM","dex":"xyz","markPx":"62.502","refPx":"62.8","basisBps":"-47.45222929936222","fundingRate":"-0.0001620749","fundingAprPct":"-17.74720155","oiUsd":"1419926.6861999999","book":null}],"status":"sent"}
