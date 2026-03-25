@@ -1,0 +1,30 @@
+name: BTC Brief
+
+on:
+  schedule:
+    - cron: '0 23 * * *' # 08:00 JST
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests
+
+      - run: python btc_brief.py
+        env:
+          COINGLASS_API_KEY: ${{ secrets.COINGLASS_API_KEY }}
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add btc_brief/index.html
+          git diff --cached --quiet || git commit -m "chore: daily BTC brief $(date -u +%Y-%m-%d)"
+          git push
