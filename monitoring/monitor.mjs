@@ -17,6 +17,12 @@ const LATEST_PATH = path.join(DATA_DIR, 'basis-latest.json');
 const POLL_MS_QUIET = 20 * 60_000;
 const POLL_MS_HOT = 5 * 60_000;
 const DEDUPE_MS = 10 * 60_000;
+const HOURLY_MS = 60 * 60_000;
+
+// Mention alert: ping when BTC-PERP trades under threshold.
+const BTC_UNDER_ALERT_USD = Number.parseFloat(process.env.BTC_UNDER_ALERT_USD || '70000');
+const PRICE_ALERT_MENTION = process.env.PRICE_ALERT_MENTION || '@debbings55';
+
 
 const INSTRUMENTS = [
   // Energy
@@ -1152,6 +1158,11 @@ async function runOnce({
     state.alerts[i.key].funding_last_ms = state.alerts[i.key].funding_last_ms ?? 0;
   }
 
+  // Global alert state
+  state.alerts.__global__ = state.alerts.__global__ || {};
+  state.alerts.__global__.btc_under_last_ms = state.alerts.__global__.btc_under_last_ms ?? 0;
+  state.alerts.__global__.btc_under_active = state.alerts.__global__.btc_under_active ?? false;
+
   const nowMs = Date.now();
 
   // Track whether any instrument is currently in dislocation, regardless of alert dedupe.
@@ -1234,6 +1245,33 @@ async function runOnce({
       console.error(`[${ts}] Telegram send failed (test): ${e?.message || e}`);
     }
   } else {
+    // BTC price mention alert: if BTC-PERP is under threshold, mention hourly until resolved.
+    const btc = instruments.find((i) => i.key === 'BTC-PERP');
+    if (btc && Number.isFinite(btc.markPx)) {
+      const under = btc.markPx < BTC_UNDER_ALERT_USD;
+      if (under) {
+        if (!state.alerts.__global__.btc_under_active || nowMs - state.alerts.__global__.btc_under_last_ms >= HOURLY_MS) {
+          const text = `${PRICE_ALERT_MENTION} BTC < ${BTC_UNDER_ALERT_USD.toLocaleString('en-US')} ${nowUtcStamp()}\nBTC-PERP mark ${fmtUsd(btc.markPx)} (basis ${fmtBps(btc.basisBps)} | funding ${fmtPct1(btc.annualizedFundingPct)} ann.)\n(Repeats hourly while under)`;
+          try {
+            await sendTelegramAndLog({
+              text,
+              eventType: 'monitor_alert',
+              kind: 'BTC UNDER THRESHOLD',
+              category: 'crypto',
+              instruments: [btc],
+            });
+            state.alerts.__global__.btc_under_last_ms = nowMs;
+            state.alerts.__global__.btc_under_active = true;
+          } catch (e) {
+            console.error(`[${ts}] Telegram send failed (btc_under_threshold): ${e?.message || e}`);
+          }
+        }
+      } else {
+        state.alerts.__global__.btc_under_active = false;
+        state.alerts.__global__.btc_under_last_ms = 0;
+      }
+    }
+
     for (const inst of instruments) {
       const basisTrigger = Math.abs(inst.basisBps) > EXTREME_BASIS_BPS;
       const fundingTrigger = inst.annualizedFundingPct !== null && Math.abs(inst.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT;
@@ -1292,6 +1330,7 @@ async function main() {
   const isTest = args.has('--test');
   const isDump = args.has('--dump');
   const isOnce = args.has('--once');
+  const isTestBtcUnder = args.has('--test-btc-under');
 
   let category = null;
   const catIdx = argv.findIndex((a) => a === '--category');
@@ -1305,6 +1344,25 @@ async function main() {
   ) {
     console.error(`Invalid --category '${category}'. Use 'energy', 'metals', 'crypto', or 'crypto-majors'.`);
     process.exitCode = 2;
+    return;
+  }
+
+  if (isTestBtcUnder) {
+    try {
+      // Fire a mention immediately (without waiting for market condition) to test notifications.
+      const text = `${PRICE_ALERT_MENTION} BTC < ${BTC_UNDER_ALERT_USD.toLocaleString('en-US')} ${nowUtcStamp()}\n(test alert)`;
+      await sendTelegramAndLog({
+        text,
+        eventType: 'monitor_alert',
+        kind: 'BTC UNDER THRESHOLD',
+        category: 'crypto',
+        instruments: [],
+      });
+      console.log(`[${new Date().toISOString()}] Sent --test-btc-under alert`);
+    } catch (e) {
+      console.error(`[${new Date().toISOString()}] --test-btc-under failed: ${e?.message || e}`);
+      process.exitCode = 1;
+    }
     return;
   }
 
