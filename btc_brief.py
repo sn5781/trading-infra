@@ -190,8 +190,41 @@ def render(ts,spot,hl,liq,okxliq,fr,ar,errs):
       b='<span class=badge>SPREAD</span>' if r["badge"] else ""; lv,lr=r["lo"]; sv,sr=r["hi"]
       rows.append(f"<tr><td><b>{e(r['a'])}</b></td><td>{e(r8(r['spr']))} <span class=muted>({e(pct(r['apr'],2))} APR)</span> {b}</td><td>{e(lv)} {e(r8(lr))}</td><td>{e(sv)} {e(r8(sr))}</td></tr>")
     arb_html="<table class=tbl><thead><tr><th>Asset</th><th>Spread</th><th>Long leg</th><th>Short leg</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table>"
+  js=f"""
+  <script>
+  (function(){{
+    function pad2(n){{return (n<10?'0':'')+n;}}
+    function fmtDur(ms){{
+      if(ms<0) ms=0;
+      var s=Math.floor(ms/1000);
+      var m=Math.floor(s/60); s%=60;
+      var h=Math.floor(m/60); m%=60;
+      var d=Math.floor(h/24); h%=24;
+      if(d>0) return d+'d '+pad2(h)+'h '+pad2(m)+'m';
+      if(h>0) return h+'h '+pad2(m)+'m';
+      if(m>0) return m+'m '+pad2(s)+'s';
+      return s+'s';
+    }}
+
+    var updatedUtcMs = Date.parse('{e(ts)}');
+    function tick(){{
+      var now = new Date();
+      var nowUtcStr = now.getUTCFullYear()+'-'+pad2(now.getUTCMonth()+1)+'-'+pad2(now.getUTCDate())+' '+pad2(now.getUTCHours())+':'+pad2(now.getUTCMinutes())+' UTC';
+      var stale = fmtDur(Date.now()-updatedUtcMs);
+      var elNow = document.getElementById('utcNow');
+      var elStale = document.getElementById('stale');
+      if(elNow) elNow.textContent = nowUtcStr;
+      if(elStale) elStale.textContent = stale;
+    }}
+    tick();
+    setInterval(tick, 1000);
+  }})();
+  </script>
+  """
+
   return f"""<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>BTC Brief</title><style>{css}</style></head><body><div class=w>
-<div class=top><div class=t>BTC Derivatives Brief</div><div class=s>Updated: {e(ts)}</div></div>
+<div class=top><div class=t>BTC Derivatives Brief</div><div class=s>Updated: {e(ts)} · Now: <span id=utcNow>—</span> · Stale: <span id=stale>—</span></div></div>
+{js}
 <div class=bar>
 {cell('BTC (Binance)',e(usd(btc['price'],2)))}{cell('BTC 24h',sp(btc['24h'],pct(btc['24h'],2)))}{cell('BTC 7d',sp(btc['7d'],pct(btc['7d'],2)))}{cell('BTC OI (HL)',e(usd(hlb['oi_usd'],0)))}{cell('ETH (Binance)',e(usd(eth['price'],2)))}{cell('ETH OI (HL)',e(usd(hle['oi_usd'],0)))}
 </div>
