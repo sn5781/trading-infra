@@ -8,7 +8,9 @@ import html, os, time, requests
 
 BIN_SPOT="https://api.binance.com"; BIN_SPOT_FALLBACK="https://data-api.binance.vision"  # common mirror
 BIN_FUT="https://fapi.binance.com"; BIN_FUT_FALLBACK="https://fapi.binance.com"  # keep slot for future mirrors
-BYBIT="https://api.bybit.com"; OKX="https://www.okx.com"; HL="https://api.hyperliquid.xyz/info"; COINGLASS="https://open-api.coinglass.com"; OUT=os.path.join("btc_brief","index.html")
+BYBIT="https://api.bybit.com"; OKX="https://www.okx.com"; HL="https://api.hyperliquid.xyz/info";
+COINGLASS_V2="https://open-api.coinglass.com"; COINGLASS_V4="https://open-api-v4.coinglass.com";
+OUT=os.path.join("btc_brief","index.html")
 
 UA={"User-Agent":"btc-brief/1.0","accept":"application/json"}
 
@@ -94,10 +96,10 @@ def funding(hl):
 
   return out
 
-def coinglass_walls(spot):
-  key=os.environ.get("COINGLASS_API_KEY");
+def coinglass_walls_v2(spot):
+  key=os.environ.get("COINGLASS_API_KEY")
   if not key: raise RuntimeError("COINGLASS_API_KEY not set")
-  j=g(f"{COINGLASS}/public/v2/liquidation/map",headers={"coinglassSecret":key,"accept":"application/json"},params={"symbol":"BTC","timeType":"3"},timeout=20)
+  j=g(f"{COINGLASS_V2}/public/v2/liquidation/map",headers={"coinglassSecret":key},params={"symbol":"BTC","timeType":"3"},timeout=20)
   d=j.get("data") or {}; sm, lm=d.get("shortLiqMap") or {}, d.get("longLiqMap") or {}
   def parse(m):
     if not isinstance(m,dict): return []
@@ -110,6 +112,50 @@ def coinglass_walls(spot):
   shorts.sort(key=lambda x:x[1],reverse=True); longs.sort(key=lambda x:x[1],reverse=True)
   return {"shorts":shorts[:3],"longs":longs[:3]}
 
+def coinglass_walls_v4(spot):
+  key=os.environ.get("COINGLASS_API_KEY")
+  if not key: raise RuntimeError("COINGLASS_API_KEY not set")
+  # v4 expects CG-API-KEY; free keys may return {code:401,msg:"Upgrade plan"}
+  j=g(f"{COINGLASS_V4}/api/futures/liquidation/map",headers={"CG-API-KEY":key},params={"symbol":"BTC","time_type":"3"},timeout=25)
+  # v4 often returns {code,msg,data}
+  if isinstance(j,dict) and str(j.get("code")) != "0":
+    raise RuntimeError(j.get("msg") or f"CoinGlass v4 error code {j.get('code')}")
+  data=j.get("data") or {}
+  sm, lm=data.get("shortLiqMap") or {}, data.get("longLiqMap") or {}
+  def parse(m):
+    if not isinstance(m,dict): return []
+    out=[]
+    for k,v in m.items():
+      px,amt=f(k),f(v)
+      if px is not None and amt is not None: out.append((px,amt))
+    return out
+  shorts=[(px,amt) for px,amt in parse(sm) if spot<px<=spot*1.10]; longs=[(px,amt) for px,amt in parse(lm) if spot*0.90<=px<spot]
+  shorts.sort(key=lambda x:x[1],reverse=True); longs.sort(key=lambda x:x[1],reverse=True)
+  return {"shorts":shorts[:3],"longs":longs[:3]}
+
+def okx_realized_liq_clusters(spot, *, limit=100):
+  # Public realized liquidation events; we build a proxy "walls" histogram.
+  j=g(f"{OKX}/api/v5/public/liquidation-orders",params={"instType":"SWAP","mgnMode":"isolated","uly":"BTC-USDT","state":"filled","limit":str(limit)},timeout=15)
+  details=((j.get("data") or [{}])[0].get("details") or []) if isinstance(j,dict) else []
+  bucket=100.0
+  agg_long={}; agg_short={}
+  for d in details:
+    px=f(d.get("bkPx")); sz=f(d.get("sz"))
+    if px is None or sz is None: continue
+    notional=px*sz
+    b=round(px/bucket)*bucket
+    # OKX: posSide short + side buy = short got liquidated (buy to cover) => SHORT liq
+    pos=str(d.get("posSide") or "").lower(); side=str(d.get("side") or "").lower()
+    if pos=="short" and side=="buy":
+      agg_short[b]=agg_short.get(b,0.0)+notional
+    elif pos=="long" and side=="sell":
+      agg_long[b]=agg_long.get(b,0.0)+notional
+
+  shorts=[(px,amt) for px,amt in agg_short.items() if spot<px<=spot*1.10]
+  longs=[(px,amt) for px,amt in agg_long.items() if spot*0.90<=px<spot]
+  shorts.sort(key=lambda x:x[1],reverse=True); longs.sort(key=lambda x:x[1],reverse=True)
+  return {"shorts":shorts[:3],"longs":longs[:3]}
+
 def arb(fr):
   rows=[]
   for a,vs in fr.items():
@@ -119,9 +165,9 @@ def arb(fr):
     rows.append({"a":a,"spr":spr,"apr":spr*3*365,"lo":(lo_v,lo_r),"hi":(hi_v,hi_r),"badge":spr>0.03})
   rows.sort(key=lambda r:r["spr"],reverse=True); return rows
 
-def render(ts,spot,hl,liq,fr,ar,errs):
+def render(ts,spot,hl,liq,okxliq,fr,ar,errs):
   e=lambda s: html.escape(str(s),quote=True)
-  css=":root{--bg:#0a0e1a;--p:#0f172a;--m:#94a3b8;--fg:#e5e7eb;--pos:#4ade80;--neg:#f87171;--ln:#1f2a44}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.w{max-width:1200px;margin:0 auto;padding:20px}.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}.t{font-weight:700}.s{color:var(--m);font-size:12px}.bar{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-bottom:14px}.kv{padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04)}.k{color:var(--m);font-size:11px}.v{font-size:16px;font-weight:700}.pos{color:var(--pos)}.neg{color:var(--neg)}.muted{color:var(--m)}.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.g{grid-template-columns:1fr}.bar{grid-template-columns:repeat(2,1fr)}}.c{background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:14px}.h{font-weight:700;margin:0 0 10px 0}.sg{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.sg{grid-template-columns:1fr}}.row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.2)}.row:last-child{border-bottom:none}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid rgba(148,163,184,.15);padding:8px;text-align:left;vertical-align:top}.tbl th{color:var(--m);font-size:12px}.badge{display:inline-block;margin-left:8px;padding:2px 6px;border-radius:999px;background:rgba(74,222,128,.15);border:1px solid rgba(74,222,128,.25);color:var(--pos);font-size:11px}.err{margin-top:8px;color:#fbbf24;font-size:12px;white-space:pre-wrap}"
+  css=":root{--bg:#0a0e1a;--p:#0f172a;--m:#94a3b8;--fg:#e5e7eb;--pos:#4ade80;--neg:#f87171;--ln:#1f2a44}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.w{max-width:1200px;margin:0 auto;padding:20px}.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}.t{font-weight:700}.s{color:var(--m);font-size:12px}.bar{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-bottom:14px}.kv{padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04)}.k{color:var(--m);font-size:11px}.v{font-size:16px;font-weight:700}.pos{color:var(--pos)}.neg{color:var(--neg)}.muted{color:var(--m)}.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.g{grid-template-columns:1fr}.bar{grid-template-columns:repeat(2,1fr)}}.c{background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:14px}.h{font-weight:700;margin:0 0 10px 0}.sg{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.sg{grid-template-columns:1fr}}.row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.2)}.row:last-child{border-bottom:none}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid rgba(148,163,184,.15);padding:8px;text-align:left;vertical-align:top}.tbl th{color:var(--m);font-size:12px}.badge{display:inline-block;margin-left:8px;padding:2px 6px;border-radius:999px;background:rgba(74,222,128,.15);border:1px solid rgba(74,222,128,.25);color:var(--pos);font-size:11px}.err{margin-top:8px;color:#fbbf24;font-size:12px;white-space:pre-wrap}.tip{color:var(--m);cursor:help;user-select:none}"
   btc,eth=spot["BTC"],spot["ETH"]; hlb,hle=hl["BTC"],hl["ETH"]; venues=["Binance","Bybit","OKX","Hyperliquid"]
   def cell(k,v): return f'<div class=kv><div class=k>{e(k)}</div><div class=v>{v}</div></div>'
   def sp(x,txt): return f'<span class={cls(x)}>{e(txt)}</span>'
@@ -146,8 +192,15 @@ def render(ts,spot,hl,liq,fr,ar,errs):
 </div>
 <div class=g>
   <div class=c><div class=h>Liquidation &amp; Perps</div><div class=sg>
-    <div><div class=muted style=\"margin-bottom:6px\">Short liq walls above spot (30d)</div>{liq_rows((liq or {}).get('shorts'))}</div>
-    <div><div class=muted style=\"margin-bottom:6px\">Long liq walls below spot (30d)</div>{liq_rows((liq or {}).get('longs'))}</div>
+    <div><div class=muted style=\"margin-bottom:6px\">Source: CoinGlass (liq map, 30d)</div>
+      <div class=muted style=\"margin-bottom:6px\">Short above spot</div>{liq_rows((liq or {}).get('shorts'))}
+      <div class=muted style=\"margin-bottom:6px; margin-top:8px\">Long below spot</div>{liq_rows((liq or {}).get('longs'))}
+    </div>
+    <div>
+      <div class=muted style=\"margin-bottom:6px\">Source: OKX (realized liquidations) — proxy clusters <span class=tip title=\"Proxy method (step-by-step):\n1) Pull OKX public liquidation orders for BTC-USDT SWAP (isolated, state=filled, last 100).\n2) For each event: take bkPx (bankruptcy price) and sz (BTC size).\n3) Approx USD notional = bkPx * sz.\n4) Bin bkPx into $100 buckets.\n5) Aggregate USD notional per bucket, split by side:\n   - posSide=short & side=buy => SHORT liquidation\n   - posSide=long & side=sell => LONG liquidation\n6) Show top 3 buckets within +/-10% of spot (above=shorts, below=longs).\nNote: This is realized liq flow, not a predictive liquidation heatmap.\">[?]</span></div>
+      <div class=muted style=\"margin-bottom:6px\">Short above spot</div>{liq_rows((okxliq or {}).get('shorts'))}
+      <div class=muted style=\"margin-bottom:6px; margin-top:8px\">Long below spot</div>{liq_rows((okxliq or {}).get('longs'))}
+    </div>
   </div>{err('coinglass')}<div style=\"height:10px\"></div><div class=muted style=\"margin-bottom:6px\">Hyperliquid funding</div>
   <table class=tbl><thead><tr><th></th><th>8h</th><th>APR</th><th>Premium</th></tr></thead><tbody>
     <tr><td><b>BTC</b></td><td>{rt(hlb['fund_8h'])}</td><td>{e(pct(hlb['apr'],2))}</td><td>{e(pct(hlb['prem'],4))}</td></tr>
@@ -167,9 +220,18 @@ def main():
   if e: spot["ETH"]=e
   hl=safe(errs,"hyperliquid",hl_ctx) or {"BTC":{"oi_usd":None,"fund_8h":None,"apr":None,"prem":None},"ETH":{"oi_usd":None,"fund_8h":None,"apr":None,"prem":None}}
   fr=safe(errs,"funding",lambda:funding(hl)) or {a:{"Binance":None,"Bybit":None,"OKX":None,"Hyperliquid":None} for a in ("BTC","ETH")}
-  liq=None
-  if spot["BTC"]["price"] is not None: liq=safe(errs,"coinglass",lambda:coinglass_walls(spot["BTC"]["price"]))
+  liq=None; okxliq=None
+  if spot["BTC"]["price"] is not None:
+    spotpx=spot["BTC"]["price"]
+    # Keep old CoinGlass section but prefer v4 (gives definitive "Upgrade plan" when gated).
+    liq=safe(errs,"coinglass",lambda: coinglass_walls_v4(spotpx))
+    if liq is None:
+      # If v4 fails for non-plan reasons, fall back to v2 (may 500).
+      liq=safe(errs,"coinglass_v2",lambda: coinglass_walls_v2(spotpx)) or liq
+    # Alt feed always attempted (free)
+    okxliq=safe(errs,"okx_liq",lambda: okx_realized_liq_clusters(spotpx))
+
   os.makedirs(os.path.dirname(OUT), exist_ok=True)
-  with open(OUT,"w",encoding="utf-8") as fp: fp.write(render(ts,spot,hl,liq,fr,arb(fr),errs))
+  with open(OUT,"w",encoding="utf-8") as fp: fp.write(render(ts,spot,hl,liq,okxliq,fr,arb(fr),errs))
 
 if __name__=="__main__": main()
