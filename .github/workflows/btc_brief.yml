@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -20,14 +22,25 @@ jobs:
 
       - run: pip install requests
 
-      - run: python btc_brief.py
+      - name: Generate HTML (from main)
+        run: python btc_brief.py
         env:
           COINGLASS_API_KEY: ${{ secrets.COINGLASS_API_KEY }}
 
-      - name: Commit and push
+      - name: Publish to gh-pages
         run: |
+          set -euo pipefail
+          cp btc_brief/index.html /tmp/btc_brief_index.html
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin gh-pages:gh-pages
+          git checkout gh-pages
+
+          mkdir -p btc_brief
+          cp /tmp/btc_brief_index.html btc_brief/index.html
+
           git add btc_brief/index.html
           git diff --cached --quiet || git commit -m "chore: daily BTC brief $(date -u +%Y-%m-%d)"
-          git push
+          git push origin gh-pages
