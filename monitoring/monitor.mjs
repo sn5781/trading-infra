@@ -60,8 +60,9 @@ const CRYPTO_MAJORS = {
 };
 
 // Extreme thresholds (global)
-const EXTREME_BASIS_BPS = 20;
-const EXTREME_FUNDING_APR_PCT = 20;
+// Alert thresholds (global)
+const EXTREME_BASIS_BPS = 35;
+const EXTREME_FUNDING_APR_PCT = 35;
 
 // Exclude dormant / zero-OI markets from monitoring output to reduce noise.
 // (These are still visible on HL UI but not useful for dislocation monitoring.)
@@ -607,7 +608,23 @@ function getDislocationStats(events) {
   return out;
 }
 
-function buildDailyDislocationSummaryText(stats, { lookbackHours = 24 } = {}) {
+function countAlertsAbove(events, { basisBpsMin, fundingAprMin } = {}) {
+  let basis = 0;
+  let funding = 0;
+  for (const ev of events) {
+    if (ev.e !== 'monitor_alert') continue;
+    const inst = Array.isArray(ev.instruments) ? ev.instruments : [];
+    for (const i of inst) {
+      const b = i?.basisBps !== null && i?.basisBps !== undefined ? Number.parseFloat(i.basisBps) : null;
+      const f = i?.fundingAprPct !== null && i?.fundingAprPct !== undefined ? Number.parseFloat(i.fundingAprPct) : null;
+      if (ev.kind === 'BASIS DISLOCATION' && Number.isFinite(b) && Math.abs(b) >= basisBpsMin) basis++;
+      if (ev.kind === 'FUNDING DISLOCATION' && Number.isFinite(f) && Math.abs(f) >= fundingAprMin) funding++;
+    }
+  }
+  return { basis, funding };
+}
+
+function buildDailyDislocationSummaryText(stats, { lookbackHours = 24, last72h = null } = {}) {
   const lines = [];
   lines.push(`📈 LAST ${lookbackHours}H SUMMARY ${nowUtcStamp()}`);
 
@@ -621,6 +638,13 @@ function buildDailyDislocationSummaryText(stats, { lookbackHours = 24 } = {}) {
   lines.push('ALERT COUNTS (monitor_alert.kind)');
   for (const [k, v] of Object.entries(stats.countsByKind).sort()) {
     lines.push(`- ${k}: ${fmtCommaInt(v)}`);
+  }
+
+  if (last72h) {
+    lines.push('');
+    lines.push(`LAST 72H (thresholds: |basis|>=${last72h.basisBpsMin}bps, |funding|>=${last72h.fundingAprMin}% ann.)`);
+    lines.push(`- basis alerts: ${fmtCommaInt(last72h.counts.basis)}`);
+    lines.push(`- funding alerts: ${fmtCommaInt(last72h.counts.funding)}`);
   }
 
   lines.push('');
@@ -735,27 +759,60 @@ function buildInstrumentBlock({ key, dex, asset, markPx, oraclePx, basisBps, fun
 }
 
 function buildExecutableArbsSection(instruments) {
-  const hits = instruments
-    .filter(
-      (i) =>
-        Number.isFinite(i.basisBps) &&
-        Math.abs(i.basisBps) > EXTREME_BASIS_BPS &&
-        i.annualizedFundingPct !== null &&
-        Number.isFinite(i.annualizedFundingPct) &&
-        Math.abs(i.annualizedFundingPct) > EXTREME_FUNDING_APR_PCT
-    )
-    .sort((a, b) => Math.abs(b.basisBps) - Math.abs(a.basisBps));
+  // Executable spot arbs: CowSwap 5k quotes vs HL spot mid reference.
+  // We treat `oraclePx` as the HL spot-like mid reference for these instruments.
+  const HL_SPOT_FEE_BPS = Number.parseFloat(process.env.HL_SPOT_TAKER_FEE_BPS || '2.0');
+
+  const cand = [];
+  for (const i of instruments) {
+    if (typeof i?.key !== 'string') continue;
+    if (!i.key.includes('-COW5K-')) continue;
+
+    const m = i.key.match(/^(.*)-COW5K-(BUY|SELL)$/);
+    if (!m) continue;
+    const dir = m[2];
+
+    const hlMid = i.oraclePx;
+    const cowPx = i.markPx;
+    if (!Number.isFinite(hlMid) || !Number.isFinite(cowPx) || hlMid <= 0) continue;
+
+    // Gross edge in bps on HL mid.
+    // BUY: buy on CowSwap, sell on HL → edge = (hlMid - cowPx)/hlMid
+    // SELL: buy on HL, sell on CowSwap → edge = (cowPx - hlMid)/hlMid
+    const gross = dir === 'BUY'
+      ? ((hlMid - cowPx) / hlMid) * 10_000
+      : ((cowPx - hlMid) / hlMid) * 10_000;
+
+    const net = gross - HL_SPOT_FEE_BPS;
+    const profitUsdAt5k = (net / 10_000) * 5_000;
+
+    cand.push({
+      key: i.key,
+      asset: i.asset,
+      sym: i.key.split('-')[0],
+      dir,
+      hlMid,
+      cowPx,
+      grossBps: gross,
+      netBps: net,
+      profitUsdAt5k,
+    });
+  }
+
+  cand.sort((a, b) => b.netBps - a.netBps);
+  const top = cand.filter((x) => x.netBps > 0).slice(0, 5);
 
   const lines = [];
-  lines.push('Executable Arbitrages');
-  if (hits.length === 0) {
+  lines.push(`Executable Arbitrages (CowSwap 5k vs HL spot mid; fee=${HL_SPOT_FEE_BPS.toFixed(2)}bps)`);
+  if (top.length === 0) {
     lines.push('(none)');
     return lines.join('\n');
   }
 
-  for (const i of hits) {
-    // Distinctive emoji per item.
-    lines.push(`⚡ ${i.key} (${i.asset} @ ${i.dex}) | basis ${fmtBps(i.basisBps)} | funding ${fmtPct1(i.annualizedFundingPct)} ann.`);
+  for (const x of top) {
+    lines.push(
+      `⚡ ${x.key} | HL ${fmtUsd(x.hlMid)} | CowSwap ${fmtUsd(x.cowPx)} | gross ${x.grossBps.toFixed(2)}bps | net ${x.netBps.toFixed(2)}bps | ~${x.profitUsdAt5k.toFixed(2)} USD @5k`
+    );
   }
 
   return lines.join('\n');
@@ -1140,10 +1197,20 @@ async function runOnce({
 
         // Daily dump: append a 24h summary of dislocation alerts + event breakdown.
         if (alertKind === 'DAILY REPORT') {
-          const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
-          const events = await readEventNdjsonSince(sinceMs);
-          const stats = getDislocationStats(events);
-          const summaryText = buildDailyDislocationSummaryText(stats, { lookbackHours: 24 });
+          const since24hMs = Date.now() - 24 * 60 * 60 * 1000;
+          const events24h = await readEventNdjsonSince(since24hMs);
+          const stats = getDislocationStats(events24h);
+
+          const since72hMs = Date.now() - 72 * 60 * 60 * 1000;
+          const events72h = await readEventNdjsonSince(since72hMs);
+          const basisBpsMin = EXTREME_BASIS_BPS;
+          const fundingAprMin = EXTREME_FUNDING_APR_PCT;
+          const counts72h = countAlertsAbove(events72h, { basisBpsMin, fundingAprMin });
+
+          const summaryText = buildDailyDislocationSummaryText(stats, {
+            lookbackHours: 24,
+            last72h: { basisBpsMin, fundingAprMin, counts: counts72h },
+          });
           await sendTelegramAndLog({
             text: summaryText,
             eventType: 'monitor_report',
