@@ -59,7 +59,7 @@ jobs:
           fi
 
           cd /tmp/gh-pages
-          rm -rf ./*
+          mkdir -p .
           cp /tmp/site/index.html ./index.html
 
           git add -A
