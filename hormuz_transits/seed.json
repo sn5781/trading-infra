@@ -22,6 +22,39 @@
     "source_url": "https://windward.ai/blog/march-4-iran-war-maritime-intelligence-daily/"
   },
   {
+    "date": "2026-03-04",
+    "vessels": 4,
+    "notes": [
+      "Windward reported the Strait remained largely closed on March 3, with only four vessels transiting the corridor.",
+      "Traffic stayed dramatically below the recent seven-day average and normal commercial levels.",
+      "Conflict disruption and insurance withdrawal reinforced a selective, risk-driven transit environment."
+    ],
+    "source": "Windward Maritime Intelligence / search-grounded corroboration",
+    "source_url": "https://windward.ai/blog/march-4-iran-war-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-05",
+    "vessels": 1,
+    "notes": [
+      "Search-grounded summaries point to only a single ship making the passage around March 5.",
+      "A Marshall Islands-flagged cargo ship (Iron Maiden) was cited as one attempted transit during the period.",
+      "Commercial traffic was effectively at zero or near-zero as operators delayed passage."
+    ],
+    "source": "Regional briefings / search-grounded summaries",
+    "source_url": "https://www.csis.org/analysis/no-one-not-even-beijing-getting-through-strait-hormuz"
+  },
+  {
+    "date": "2026-03-06",
+    "vessels": 1,
+    "notes": [
+      "Reporting around March 6 described near-standstill conditions with only a single commercial transit visible around the day.",
+      "No oil tankers were highlighted in the minimal daily flow.",
+      "The backlog outside the Strait continued to build as operators delayed passage."
+    ],
+    "source": "Regional briefings / search-grounded summaries",
+    "source_url": "https://www.timesofisrael.com/liveblog_entry/only-nine-commercial-ships-detected-crossing-the-hormuz-strait-since-monday/"
+  },
+  {
     "date": "2026-03-07",
     "vessels": 3,
     "notes": [
