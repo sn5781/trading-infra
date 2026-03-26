@@ -55,6 +55,39 @@
     "source_url": "https://www.timesofisrael.com/liveblog_entry/only-nine-commercial-ships-detected-crossing-the-hormuz-strait-since-monday/"
   },
   {
+    "date": "2026-03-08",
+    "vessels": 2,
+    "notes": [
+      "Traffic fell to its lowest level since the conflict began, with only two outbound Iranian-flagged vessels and no inbound crossings.",
+      "Foreign commercial operators appeared to have effectively withdrawn from the waterway.",
+      "At least one tanker may have completed a dark transit with AIS disabled before reappearing later."
+    ],
+    "source": "Windward Maritime Intelligence / search-grounded summary",
+    "source_url": "https://windward.ai/blog/march-9-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-09",
+    "vessels": 1,
+    "notes": [
+      "Commercial activity reached a new low with just one outbound Iranian-flagged vessel and no inbound movements.",
+      "This represented a 50% decrease from the previous day.",
+      "Overall flow remained far below normal operating levels."
+    ],
+    "source": "Windward Maritime Intelligence / search-grounded summary",
+    "source_url": "https://windward.ai/blog/march-10-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-10",
+    "vessels": 2,
+    "notes": [
+      "Windward reported two outbound crossings and no inbound movements.",
+      "The vessels included one crude oil tanker and one vessel of unknown classification.",
+      "Transit stayed severely constrained and broadly aligned with the depressed 7-day average."
+    ],
+    "source": "Windward Maritime Intelligence / search-grounded summary",
+    "source_url": "https://windward.ai/blog/march-12-maritime-intelligence-daily/"
+  },
+  {
     "date": "2026-03-07",
     "vessels": 3,
     "notes": [
