@@ -1,0 +1,90 @@
+[
+  {
+    "date": "2026-03-02",
+    "vessels": 13,
+    "notes": [
+      "Traffic fell to 13 transits as the conflict tightened access.",
+      "Reports indicated only a single oil tanker was visible that day.",
+      "Transit shifted toward selective and controlled passage rather than open commercial flow."
+    ],
+    "source": "Regional briefings / cited summaries",
+    "source_url": "https://www.csis.org/analysis/no-one-not-even-beijing-getting-through-strait-hormuz"
+  },
+  {
+    "date": "2026-03-07",
+    "vessels": 3,
+    "notes": [
+      "One inbound and two outbound crossings were recorded.",
+      "Selective transit allowances appeared to be in effect for a narrow subset of vessels.",
+      "Traffic remained far below the 7-day average and near a standstill."
+    ],
+    "source": "Windward Maritime Intelligence",
+    "source_url": "https://windward.ai/blog/march-8-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-14",
+    "vessels": 0,
+    "notes": [
+      "No AIS-confirmed crossings were recorded in either direction.",
+      "This marked the first full visible halt in commercial shipping through the chokepoint.",
+      "Roughly 400 vessels were still operating in the Gulf of Oman waiting near the Strait."
+    ],
+    "source": "Windward Maritime Intelligence",
+    "source_url": "https://windward.ai/blog/march-15-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-15",
+    "vessels": 3,
+    "notes": [
+      "Three outbound crossings were recorded and no inbound transits.",
+      "This was the first visible movement since March 13 but still near paralysis.",
+      "Traffic remained only marginally above the 7-day moving average."
+    ],
+    "source": "Windward Maritime Intelligence",
+    "source_url": "https://windward.ai/blog/march-16-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-16",
+    "vessels": 2,
+    "notes": [
+      "One inbound and one outbound vessel were recorded.",
+      "Both identified vessels were bulk carriers flagged to Panama.",
+      "At least five bulk carriers were observed routing via Iranian territorial waters."
+    ],
+    "source": "Windward Maritime Intelligence",
+    "source_url": "https://windward.ai/blog/march-17-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-23",
+    "vessels": 5,
+    "notes": [
+      "Five AIS-transmitting vessels transited the Strait.",
+      "All followed a northern routing pattern above Larak Island.",
+      "Traffic remained permission-based and embedded in a worsening mine-risk environment."
+    ],
+    "source": "Windward Maritime Intelligence",
+    "source_url": "https://windward.ai/blog/march-24-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-24",
+    "vessels": 4,
+    "notes": [
+      "Only four AIS-visible crossings were recorded.",
+      "One vessel exited the Gulf and three entered via the managed northern corridor.",
+      "Standard commercial lanes remained empty while vessels staged north of Larak Island."
+    ],
+    "source": "Windward Maritime Intelligence",
+    "source_url": "https://windward.ai/blog/march-25-maritime-intelligence-daily/"
+  },
+  {
+    "date": "2026-03-25",
+    "vessels": 3,
+    "notes": [
+      "Live regional tracking indicated roughly three transits over the prior 24 hours.",
+      "Throughput was described as around 5% of a normal 60-vessel day.",
+      "Selective passage rather than open commercial navigation remained the operating model."
+    ],
+    "source": "Regional briefings / live tracker citations",
+    "source_url": "https://hormuzstraitmonitor.com/"
+  }
+]

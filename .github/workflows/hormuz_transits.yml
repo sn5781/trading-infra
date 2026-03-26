@@ -1,0 +1,46 @@
+name: Hormuz Transits
+
+on:
+  schedule:
+    - cron: '10 0 * * *' # shortly after UTC day-end
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests
+
+      - name: Generate Hormuz transits HTML
+        run: python hormuz_transits.py
+
+      - name: Publish to gh-pages
+        run: |
+          set -euo pipefail
+          cp hormuz_transits/index.html /tmp/hormuz_transits_index.html
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin gh-pages:gh-pages
+          rm -rf /tmp/gh-pages
+          git worktree add /tmp/gh-pages gh-pages
+
+          mkdir -p /tmp/gh-pages/hormuz_transits
+          cp /tmp/hormuz_transits_index.html /tmp/gh-pages/hormuz_transits/index.html
+
+          cd /tmp/gh-pages
+          git add hormuz_transits/index.html
+          git diff --cached --quiet || git commit -m "chore: update Hormuz transits $(date -u +%Y-%m-%d)"
+          git push origin gh-pages
