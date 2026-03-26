@@ -59,8 +59,8 @@ jobs:
           fi
 
           cd /tmp/gh-pages
-          mkdir -p .
-          cp /tmp/site/index.html ./index.html
+          mkdir -p dislocations
+          cp /tmp/site/index.html ./dislocations/index.html
 
           git add -A
           if git diff --cached --quiet; then
