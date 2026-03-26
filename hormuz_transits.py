@@ -107,8 +107,8 @@ def merge_rows(seed_rows, fetched_rows):
     for r in fetched_rows:
         if not r:
             continue
-        if r['date'] not in by_date:
-            by_date[r['date']] = r
+        # Fresh parsed source data should replace older seeded placeholders.
+        by_date[r['date']] = r
     rows = list(by_date.values())
     rows.sort(key=lambda r: r['date'])
     return rows
