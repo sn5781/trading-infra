@@ -110,6 +110,17 @@
     "source_url": "https://windward.ai/blog/march-15-maritime-intelligence-daily/"
   },
   {
+    "date": "2026-03-12",
+    "vessels": 0,
+    "notes": [
+      "Lloyd's List reported no vessels attempted to transit the Strait on March 12.",
+      "This marked the first day without transits since the conflict began.",
+      "The halt followed a severe deterioration in maritime security after multiple vessel attacks across March 11–12."
+    ],
+    "source": "Lloyd's List / Windward Maritime Intelligence",
+    "source_url": "https://windward.ai/blog/march-12-maritime-intelligence-daily/"
+  },
+  {
     "date": "2026-03-07",
     "vessels": 3,
     "notes": [
