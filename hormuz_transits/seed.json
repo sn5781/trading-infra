@@ -1,5 +1,27 @@
 [
   {
+    "date": "2026-02-28",
+    "vessels": 105,
+    "notes": [
+      "The day of the first large strike still saw 105 ships transit the Strait.",
+      "That level was already below typical pre-conflict flow, at roughly 68% of normal volume.",
+      "Traffic deteriorated sharply only after the escalation and warnings against passage took hold."
+    ],
+    "source": "CSIS / Lloyd's List cited summaries",
+    "source_url": "https://www.csis.org/analysis/no-one-not-even-beijing-getting-through-strait-hormuz"
+  },
+  {
+    "date": "2026-03-01",
+    "vessels": 23,
+    "notes": [
+      "Lloyd's List tracked only 23 transits of all vessel types.",
+      "This was an 81% reduction versus February 22 levels.",
+      "Only one crude oil tanker transited and no LNG carrier crossings were recorded."
+    ],
+    "source": "Lloyd's List / Lloyd's Market Association",
+    "source_url": "https://lmalloyds.com/safety-concerns-not-insurance-availability-driving-reduced-vessel-traffic-in-the-strait-of-hormuz/"
+  },
+  {
     "date": "2026-03-02",
     "vessels": 13,
     "notes": [
