@@ -2,7 +2,7 @@ name: BTC Brief
 
 on:
   schedule:
-    - cron: '0 23 * * *' # 08:00 JST
+    - cron: '0 */3 * * *' # every 3h
   workflow_dispatch:
 
 permissions:

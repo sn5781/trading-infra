@@ -20,8 +20,8 @@ const DEDUPE_MS = 10 * 60_000;
 const ALERT_EVERY_MS = 15 * 60_000;
 
 // Mention alert: ping when BTC-PERP trades under thresholds.
-const BTC_UNDER_70K_USD = Number.parseFloat(process.env.BTC_UNDER_70K_USD || '70000');
-const BTC_UNDER_71K_USD = Number.parseFloat(process.env.BTC_UNDER_71K_USD || '71000');
+const BTC_UNDER_70K_USD = Number.parseFloat(process.env.BTC_UNDER_70K_USD || '63000');
+const BTC_UNDER_71K_USD = Number.parseFloat(process.env.BTC_UNDER_71K_USD || '65000');
 const PRICE_ALERT_MENTION = process.env.PRICE_ALERT_MENTION || '@debbings55';
 const PRICE_ALERT_VENUE = 'HL BTC-PERP';
 
