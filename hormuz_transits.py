@@ -136,7 +136,7 @@ def render(rows):
     esc = lambda s: html.escape(str(s), quote=True)
 
     trs = []
-    for r in reversed(rows):
+    for i, r in enumerate(reversed(rows), start=1):
         v = r.get('vessels')
         notes = ''.join(f'<li>{esc(n)}</li>' for n in (r.get('notes') or [])[:3]) or '<li>—</li>'
         src = f'<a href="{esc(r.get("source_url","#"))}" target="_blank" rel="noreferrer">{esc(r.get("source","source"))}</a>'
@@ -144,7 +144,7 @@ def render(rows):
             f"<tr>"
             f"<td>{esc(r['date'])}</td>"
             f"<td><span class='pill {color_class(v)}'>{esc(v if v is not None else '—')}</span></td>"
-            f"<td><ul>{notes}</ul></td>"
+            f"<td><details><summary>notes</summary><ul>{notes}</ul></details></td>"
             f"<td>{src}</td>"
             f"</tr>"
         )
@@ -153,10 +153,10 @@ def render(rows):
 <title>Hormuz Transits</title>
 <style>
 :root{{--bg:#0b1220;--panel:#111827;--muted:#94a3b8;--fg:#e5e7eb;--line:#1f2937;--green:#22c55e;--yellow:#eab308;--orange:#f97316;--red:#ef4444;}}
-*{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}}
-.wrap{{max-width:1200px;margin:0 auto;padding:20px}} .top{{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}}
-.title{{font-size:20px;font-weight:700}} .sub{{color:var(--muted);font-size:12px}} .grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}} @media(max-width:900px){{.grid{{grid-template-columns:repeat(2,1fr)}}}} @media(max-width:640px){{.grid{{grid-template-columns:1fr}}}}
-.card{{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}} .k{{color:var(--muted);font-size:11px;margin-bottom:6px}} .v{{font-size:18px;font-weight:700}} .tbl{{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}} .tbl th,.tbl td{{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}} .tbl th{{color:var(--muted);font-size:12px}} .tbl ul{{margin:0;padding-left:18px}} .pill{{display:inline-block;min-width:56px;text-align:center;padding:4px 8px;border-radius:999px;color:#081018;font-weight:700}} .green{{background:var(--green)}} .yellow{{background:var(--yellow)}} .orange{{background:var(--orange)}} .red{{background:var(--red)}} .na{{background:#64748b}} a{{color:#cbd5e1}} .legend{{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px;color:var(--muted)}} .lg span{{display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:6px}} .note{{color:var(--muted);font-size:12px;margin-top:10px}}
+*{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--fg);font:13px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}}
+.wrap{{max-width:1400px;margin:0 auto;padding:16px}} .top{{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}}
+.title{{font-size:18px;font-weight:700}} .sub{{color:var(--muted);font-size:12px}} .grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}} @media(max-width:900px){{.grid{{grid-template-columns:repeat(2,1fr)}}}} @media(max-width:640px){{.grid{{grid-template-columns:1fr}}}}
+.card{{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}} .k{{color:var(--muted);font-size:11px;margin-bottom:4px}} .v{{font-size:16px;font-weight:700}} .tbl{{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}} .tbl th,.tbl td{{padding:8px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}} .tbl th{{color:var(--muted);font-size:11px}} .tbl ul{{margin:6px 0 0;padding-left:18px}} .tbl details summary{{cursor:pointer;color:#cbd5e1}} .pill{{display:inline-block;min-width:44px;text-align:center;padding:3px 7px;border-radius:999px;color:#081018;font-weight:700}} .green{{background:var(--green)}} .yellow{{background:var(--yellow)}} .orange{{background:var(--orange)}} .red{{background:var(--red)}} .na{{background:#64748b}} a{{color:#cbd5e1}} .legend{{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 12px;color:var(--muted)}} .lg span{{display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:6px}} .note{{color:var(--muted);font-size:12px;margin-top:10px}}
 </style></head><body><div class=wrap>
 <div class=top><div><div class=title>Hormuz Transits</div><div class=sub>Daily vessel transits through the Strait of Hormuz — UTC day table with transit-specific notes.</div></div><div class=sub>Updated: {esc(updated)} · Latest day in table: {esc(latest)}</div></div>
 <div class=grid>

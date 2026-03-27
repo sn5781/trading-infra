@@ -4,7 +4,7 @@ Deps: requests only. Env: COINGLASS_API_KEY (optional). Output: btc_brief/index.
 All sections degrade gracefully ("—") on failure.
 """
 
-import html, os, time, requests
+import html, os, time, requests, json, glob, datetime as dt
 
 BIN_SPOT="https://api.binance.com"; BIN_SPOT_FALLBACK="https://data-api.binance.vision"  # common mirror
 BIN_FUT="https://fapi.binance.com"; BIN_FUT_FALLBACK="https://fapi.binance.com"  # keep slot for future mirrors
@@ -176,7 +176,39 @@ def arb(fr):
     rows.append({"a":a,"spr":spr,"apr":spr*3*365,"lo":(lo_v,lo_r),"hi":(hi_v,hi_r),"badge":spr>0.03})
   rows.sort(key=lambda r:r["spr"],reverse=True); return rows
 
-def render(ts,spot,hl,liq,okxliq,fr,ar,errs):
+def repo_top_arbs_24h():
+  log_dir=os.environ.get('LOG_DIR')
+  if not log_dir or not os.path.isdir(log_dir): return []
+  now=time.time()*1000; cutoff=now-24*3600*1000
+  rows=[]
+  for path in sorted(glob.glob(os.path.join(log_dir,'events-*.ndjson')))[-3:]:
+    try:
+      with open(path,'r',encoding='utf-8') as fh:
+        for line in fh:
+          try: j=json.loads(line)
+          except: continue
+          ts=f(j.get('E')) or f(j.get('ts'))
+          if ts is None or ts<cutoff: continue
+          if str(j.get('e'))!='monitor_alert': continue
+          insts=j.get('instruments') or []
+          for inst in insts:
+            bb=f(inst.get('basis_bps') if 'basis_bps' in inst else inst.get('basisBps'))
+            fa=f(inst.get('funding_ann_pct') if 'funding_ann_pct' in inst else inst.get('fundingAprPct'))
+            key=inst.get('key') or inst.get('symbol') or inst.get('asset') or inst.get('s')
+            score=max(abs(bb) if bb is not None else 0, abs(fa) if fa is not None else 0)
+            if score<=0 or not key: continue
+            rows.append({'asset':key,'basis_bps':bb,'funding_ann_pct':fa,'score':score,'ts':ts,'category':j.get('category')})
+    except Exception:
+      pass
+  # dedupe by asset to strongest event in window
+  best={}
+  for r in rows:
+    if r['asset'] not in best or r['score']>best[r['asset']]['score']:
+      best[r['asset']]=r
+  out=sorted(best.values(), key=lambda r:r['score'], reverse=True)
+  return out[:10]
+
+def render(ts,spot,hl,liq,okxliq,fr,ar,repo_arbs,errs):
   e=lambda s: html.escape(str(s),quote=True)
   css=":root{--bg:#0a0e1a;--p:#0f172a;--m:#94a3b8;--fg:#e5e7eb;--pos:#4ade80;--neg:#f87171;--ln:#1f2a44}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.w{max-width:1200px;margin:0 auto;padding:20px}.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}.t{font-weight:700}.s{color:var(--m);font-size:12px}.bar{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-bottom:14px}.kv{padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04)}.k{color:var(--m);font-size:11px}.v{font-size:16px;font-weight:700}.pos{color:var(--pos)}.neg{color:var(--neg)}.muted{color:var(--m)}.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.g{grid-template-columns:1fr}.bar{grid-template-columns:repeat(2,1fr)}}.c{background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:14px}.h{font-weight:700;margin:0 0 10px 0}.sg{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.sg{grid-template-columns:1fr}}.row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.2)}.row:last-child{border-bottom:none}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid rgba(148,163,184,.15);padding:8px;text-align:left;vertical-align:top}.tbl th{color:var(--m);font-size:12px}.badge{display:inline-block;margin-left:8px;padding:2px 6px;border-radius:999px;background:rgba(74,222,128,.15);border:1px solid rgba(74,222,128,.25);color:var(--pos);font-size:11px}.err{margin-top:8px;color:#fbbf24;font-size:12px;white-space:pre-wrap}.tip{color:var(--m);cursor:help;user-select:none}.lnk{color:var(--fg);text-decoration:underline}"
   btc,eth=spot["BTC"],spot["ETH"]; hlb,hle=hl["BTC"],hl["ETH"]; venues=["Binance","Bybit","OKX","Hyperliquid"]
@@ -233,6 +265,13 @@ def render(ts,spot,hl,liq,okxliq,fr,ar,errs):
   </script>
   """
 
+  repo_html='<div class="muted">—</div>'
+  if repo_arbs:
+    rows=[]
+    for r in repo_arbs:
+      rows.append(f"<tr><td><b>{e(r['asset'])}</b></td><td>{e(usd(r['basis_bps'],1) if False else (str(round(r['basis_bps'],1))+' bps' if r['basis_bps'] is not None else '—'))}</td><td>{e(pct(r['funding_ann_pct'],1))}</td><td>{e(str(r.get('category') or '—'))}</td></tr>")
+    repo_html="<table class=tbl><thead><tr><th>Asset</th><th>Basis</th><th>Funding APR</th><th>Category</th></tr></thead><tbody>"+"".join(rows)+"</tbody></table>"
+
   return f"""<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>BTC Brief</title><style>{css}</style></head><body><div class=w>
 <div class=top><div class=t>BTC Derivatives Brief</div><div class=s>Updated: {e(ts)} · Now: <span id=utcNow>—</span> · Stale: <span id=stale>—</span></div></div>
 {js}
@@ -258,7 +297,7 @@ def render(ts,spot,hl,liq,okxliq,fr,ar,errs):
   <div class=c><div class=h>Funding Arb Alerts</div><div class=muted style=\"margin-bottom:6px\">Funding rates (8h %)</div>
   <table class=tbl><thead><tr><th></th>"""+"".join([f"<th>{e(v)}</th>" for v in venues])+f"""</tr></thead><tbody>{rate_tbl}</tbody></table>{err('funding')}
   <div style=\"height:10px\"></div><div class=muted style=\"margin-bottom:6px\">Arb spreads (max - min)</div>{arb_html}</div>
-</div><div class=s style=\"margin-top:12px\">Sources: Binance · Hyperliquid · CoinGlass · Bybit · OKX</div>
+</div><div style=\"height:14px\"></div><div class=c><div class=h>Top 24h dislocations from repo logs</div><div class=muted style=\"margin-bottom:6px\">Strongest basis / funding events across tracked assets using only logs-branch NDJSON from the last 24h.</div>{repo_html}</div><div class=s style=\"margin-top:12px\">Sources: Binance · Hyperliquid · CoinGlass · Bybit · OKX · repo logs branch</div>
 </div></body></html>"""
 
 def main():
@@ -281,6 +320,6 @@ def main():
     okxliq=safe(errs,"okx_liq",lambda: okx_realized_liq_clusters(spotpx))
 
   os.makedirs(os.path.dirname(OUT), exist_ok=True)
-  with open(OUT,"w",encoding="utf-8") as fp: fp.write(render(ts,spot,hl,liq,okxliq,fr,arb(fr),errs))
+  with open(OUT,"w",encoding="utf-8") as fp: fp.write(render(ts,spot,hl,liq,okxliq,fr,arb(fr),repo_top_arbs_24h(),errs))
 
 if __name__=="__main__": main()

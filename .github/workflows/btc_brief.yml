@@ -22,10 +22,19 @@ jobs:
 
       - run: pip install requests
 
+      - name: Fetch logs branch for repo dislocation section
+        run: |
+          rm -rf /tmp/logs-branch
+          git fetch origin logs:refs/remotes/origin/logs || true
+          if git show-ref --verify --quiet refs/remotes/origin/logs; then
+            git worktree add /tmp/logs-branch origin/logs
+          fi
+
       - name: Generate HTML (from main)
         run: python btc_brief.py
         env:
           COINGLASS_API_KEY: ${{ secrets.COINGLASS_API_KEY }}
+          LOG_DIR: /tmp/logs-branch/logs/monitoring
 
       - name: Publish to gh-pages
         run: |
