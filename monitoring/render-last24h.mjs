@@ -85,8 +85,8 @@ async function main() {
   const sinceMs = now - 24 * 60 * 60 * 1000;
   const events = await readEventsSince(sinceMs);
   const rows = rowsFromAlerts(events);
-  const newest = rows[0]?.ts ?? now;
-  const staleH = ((now - newest) / 3600000).toFixed(1);
+  const lastPulled = events.length ? Math.max(...events.map((e) => e.E || 0)) : now;
+  const staleH = ((now - lastPulled) / 3600000).toFixed(1);
 
   const css = `
   :root{--bg:#0a0e1a;--p:#0f172a;--m:#94a3b8;--fg:#e5e7eb;--pos:#4ade80;--neg:#f87171;--ln:#1f2a44}
@@ -100,7 +100,7 @@ async function main() {
   <div class=top><div class=t>Dislocations (last 24h)</div><div class=s>Generated: ${esc(utcStamp(now))}</div></div>
   <div class=grid>
     <div class=card><div class=k>Rows</div><div class=v>${rows.length}</div></div>
-    <div class=card><div class=k>Latest event</div><div class=v>${esc(utcStamp(newest))}</div></div>
+    <div class=card><div class=k>Last pulled from logs</div><div class=v>${esc(utcStamp(lastPulled))}</div></div>
     <div class=card><div class=k>Stale</div><div class=v>${esc(staleH)}h</div></div>
     <div class=card><div class=k>Sources</div><div class=v><a href="https://github.com/sn5781/trading-infra/tree/logs/logs/monitoring" target="_blank" rel="noreferrer">logs branch</a></div></div>
   </div>
