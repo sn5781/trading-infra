@@ -954,8 +954,10 @@ async function runOnce({
   // Load futures references (ibkr_cl_ref.py / ibkr_copper_ref.py sidecars)
   let clRef = null;
   let copperRef = null;
+  let brentRef = null;
   try { clRef = JSON.parse(await fs.readFile(path.join(DATA_DIR, 'cl-ref.json'), 'utf8')); } catch (_) {}
   try { copperRef = JSON.parse(await fs.readFile(path.join(DATA_DIR, 'copper-ref.json'), 'utf8')); } catch (_) {}
+  try { brentRef = JSON.parse(await fs.readFile(path.join(DATA_DIR, 'brent-ref.json'), 'utf8')); } catch (_) {}
   const prev = await readState();
 
   // Build a full instrument list:
@@ -999,7 +1001,7 @@ async function runOnce({
       let cmeBasisBps = null;
       let cmeRefPx = null;
       let cmeRollState = null;
-      const refData = i.key === 'CL' ? clRef : i.key === 'COPPER' ? copperRef : null;
+      const refData = i.key === 'CL' ? clRef : i.key === 'COPPER' ? copperRef : i.key === 'BRENTOIL' ? brentRef : null;
       if (refData && refData.roll && refData.roll.ref_price != null) {
         cmeRefPx = refData.roll.ref_price;
         cmeRollState = refData.roll;
