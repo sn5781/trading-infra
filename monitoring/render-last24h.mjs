@@ -124,6 +124,9 @@ async function main() {
   const copperRef = loadJson(path.join(DATA_DIR, "copper-ref.json"));
   const copperLatest = basisLatest?.instruments?.["xyz:COPPER"] || basisLatest?.instruments?.["COPPER"] || null;
   const copperCard = buildFuturesCard(copperRef, copperLatest, "COPPER", "COMEX");
+  const brentRef = loadJson(path.join(DATA_DIR, "brent-ref.json"));
+  const brentLatest = basisLatest?.instruments?.["BRENTOIL"] || basisLatest?.instruments?.["xyz:BRENTOIL"] || null;
+  const brentCard = buildFuturesCard(brentRef, brentLatest, "BRENTOIL", "ICE/NYMEX");
   const lastPulled = events.length ? Math.max(...events.map((e) => e.E || 0)) : now;
   const staleH = ((now - lastPulled) / 3600000).toFixed(1);
 
@@ -145,6 +148,7 @@ async function main() {
   </div>
   ${clCard}
   ${copperCard}
+  ${brentCard}
   <div class=s style="margin-bottom:12px">Data sources: local monitor NDJSON on the <b>logs</b> branch, sourced from Hyperliquid / DefiLlama / CowSwap flows already captured by the monitoring stack. BTC brief has a shortcut link to this page.</div>
   <table class=tbl><thead><tr><th>time_utc</th><th>kind</th><th>category</th><th>symbol</th><th>dex</th><th>basis</th><th>funding APR</th><th>mark</th><th>ref</th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${esc(utcStamp(r.ts))}</td><td>${esc(r.kind)}</td><td>${esc(r.category)}</td><td>${esc(r.sym)}</td><td>${esc(r.dex)}</td><td class="${cls(r.basisBps)}">${esc(fmtBps(r.basisBps))}</td><td class="${cls(r.fundingAprPct)}">${esc(fmtPct(r.fundingAprPct))}</td><td>${esc(r.markPx ?? '')}</td><td>${esc(r.refPx ?? '')}</td></tr>`).join('')}
