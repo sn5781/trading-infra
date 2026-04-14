@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
+import { readFileSync as rfs } from 'node:fs';
 import path from 'node:path';
 
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve('./data');
 const LOG_DIR = process.env.LOG_DIR ? path.resolve(process.env.LOG_DIR) : path.resolve('./data/logs');
 const OUT_DIR = process.env.OUT_DIR ? path.resolve(process.env.OUT_DIR) : path.resolve('./site');
 const OUT_PATH = path.join(OUT_DIR, 'index.html');
@@ -32,6 +34,35 @@ function num(x) {
 function fmtBps(x) { const n = num(x); if (n === null) return '—'; return `${n >= 0 ? '+' : ''}${n.toFixed(1)} bps`; }
 function fmtPct(x) { const n = num(x); if (n === null) return '—'; return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`; }
 function cls(x) { const n = num(x); return n === null ? '' : (n >= 0 ? 'pos' : 'neg'); }
+function fmtPx(x, d = 3) { const n = num(x); if (n === null) return "—"; return "$" + n.toFixed(d); }
+function loadJson(fp) { try { return JSON.parse(rfs(fp, "utf8")); } catch { return null; } }
+function buildClCard(r, l) {
+  if (!r && !l) return "";
+  const roll = r?.roll || {}; const front = r?.front || {}; const next = r?.next || {};
+  const wf = num(roll.w_front); const wn = num(roll.w_next);
+  const rl = (wf > 0 && wn > 0) ? "roll active" : "single-month";
+  const src = r?.ref_price_source || "—";
+  const lg = r?.ibkr_login_time ? r.ibkr_login_time.slice(0,16).replace("T"," ") + " UTC" : "—";
+  return `
+  <div class=card style="margin-bottom:14px;padding:16px">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div class=t style="font-size:15px">🛢 CL (WTI) — CME Reference</div>
+      <div class=s>source: ${esc(src)} · IBKR: ${esc(lg)}</div>
+    </div>
+    <div class=grid style="margin-bottom:10px">
+      <div class=card><div class=k>HL mark</div><div class=v>${esc(fmtPx(l?.markPx,2))}</div></div>
+      <div class=card><div class=k>CME ref</div><div class=v>${esc(fmtPx(roll.ref_price,3))}</div></div>
+      <div class=card><div class=k>CME basis</div><div class="v ${cls(l?.cme_basis_bps)}">${esc(fmtBps(l?.cme_basis_bps))}</div></div>
+      <div class=card><div class=k>Oracle basis</div><div class="v ${cls(l?.basis_bps)}">${esc(fmtBps(l?.basis_bps))}</div></div>
+    </div>
+    <div class=grid>
+      <div class=card><div class=k>Roll</div><div class=v>BD${esc(String(roll.business_day??"?"))} · ${esc(rl)}</div></div>
+      <div class=card><div class=k>Weights F/N</div><div class=v>${wf==null?"—":Math.round(wf*100)+"%"} / ${wn==null?"—":Math.round(wn*100)+"%"}</div></div>
+      <div class=card><div class=k>Front (${esc(front.localSymbol||"?")})</div><div class=v>${esc(fmtPx(front.price,3))}</div></div>
+      <div class=card><div class=k>Next (${esc(next.localSymbol||"?")})</div><div class=v>${esc(fmtPx(next.price,3))}</div></div>
+    </div>
+  </div>`;
+}
 
 async function readEventsSince(sinceMs) {
   const days = new Set([
@@ -85,6 +116,10 @@ async function main() {
   const sinceMs = now - 24 * 60 * 60 * 1000;
   const events = await readEventsSince(sinceMs);
   const rows = rowsFromAlerts(events);
+  const clRef = loadJson(path.join(DATA_DIR, "cl-ref.json"));
+  const basisLatest = loadJson(path.join(DATA_DIR, "basis-latest.json"));
+  const clLatest = basisLatest?.instruments?.CL || null;
+  const clCard = buildClCard(clRef, clLatest);
   const lastPulled = events.length ? Math.max(...events.map((e) => e.E || 0)) : now;
   const staleH = ((now - lastPulled) / 3600000).toFixed(1);
 
@@ -104,6 +139,7 @@ async function main() {
     <div class=card><div class=k>Stale</div><div class=v>${esc(staleH)}h</div></div>
     <div class=card><div class=k>Sources</div><div class=v><a href="https://github.com/sn5781/trading-infra/tree/logs/logs/monitoring" target="_blank" rel="noreferrer">logs branch</a></div></div>
   </div>
+  ${clCard}
   <div class=s style="margin-bottom:12px">Data sources: local monitor NDJSON on the <b>logs</b> branch, sourced from Hyperliquid / DefiLlama / CowSwap flows already captured by the monitoring stack. BTC brief has a shortcut link to this page.</div>
   <table class=tbl><thead><tr><th>time_utc</th><th>kind</th><th>category</th><th>symbol</th><th>dex</th><th>basis</th><th>funding APR</th><th>mark</th><th>ref</th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${esc(utcStamp(r.ts))}</td><td>${esc(r.kind)}</td><td>${esc(r.category)}</td><td>${esc(r.sym)}</td><td>${esc(r.dex)}</td><td class="${cls(r.basisBps)}">${esc(fmtBps(r.basisBps))}</td><td class="${cls(r.fundingAprPct)}">${esc(fmtPct(r.fundingAprPct))}</td><td>${esc(r.markPx ?? '')}</td><td>${esc(r.refPx ?? '')}</td></tr>`).join('')}
