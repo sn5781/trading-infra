@@ -65,6 +65,33 @@ function buildFuturesCard(r, l, cardTitle, exchangeLabel) {
   </div>`;
 }
 
+function buildEtfCard(r, l, cardTitle, exchangeLabel) {
+  if (!r && !l) return "";
+  const c = r?.contract || {};
+  const src = r?.price_source || c?.price_source || "—";
+  const lg = r?.ibkr_login_time ? r.ibkr_login_time.slice(0,16).replace("T"," ") + " UTC" : "—";
+  return `
+  <div class=card style="margin-bottom:14px;padding:16px">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div class=t style="font-size:15px">☢️ ${cardTitle} — ${exchangeLabel} ETF Reference</div>
+      <div class=s>source: ${esc(exchangeLabel)} / ${esc(src)} · IBKR: ${esc(lg)}</div>
+    </div>
+    <div class=grid style="margin-bottom:10px">
+      <div class=card><div class=k>HL mark</div><div class=v>${esc(fmtPx(l?.markPx,2))}</div></div>
+      <div class=card><div class=k>ETF ref</div><div class=v>${esc(fmtPx(r?.ref_price,2))}</div></div>
+      <div class=card><div class=k>ETF basis</div><div class="v ${cls(l?.cme_basis_bps)}">${esc(fmtBps(l?.cme_basis_bps))}</div></div>
+      <div class=card><div class=k>Oracle basis</div><div class="v ${cls(l?.basis_bps)}">${esc(fmtBps(l?.basis_bps))}</div></div>
+    </div>
+    <div class=s style="margin:-4px 0 12px 0">Funding APR: <span class="${cls(l?.annualized_funding_pct)}">${esc(fmtPct(l?.annualized_funding_pct))}</span></div>
+    <div class=grid>
+      <div class=card><div class=k>Ticker</div><div class=v>${esc(c.localSymbol||"?")}</div></div>
+      <div class=card><div class=k>Venue</div><div class=v>${esc(c.primaryExchange||exchangeLabel)}</div></div>
+      <div class=card><div class=k>Bid / Ask</div><div class=v>${esc(fmtPx(c.bid,2))} / ${esc(fmtPx(c.ask,2))}</div></div>
+      <div class=card><div class=k>Last / Close</div><div class=v>${esc(fmtPx(c.last,2))} / ${esc(fmtPx(c.close,2))}</div></div>
+    </div>
+  </div>`;
+}
+
 async function readEventsSince(sinceMs) {
   const days = new Set([
     new Date(Date.now()).toISOString().slice(0, 10),
@@ -127,6 +154,10 @@ async function main() {
   const brentRef = loadJson(path.join(DATA_DIR, "brent-ref.json"));
   const brentLatest = basisLatest?.instruments?.["BRENTOIL"] || basisLatest?.instruments?.["xyz:BRENTOIL"] || null;
   const brentCard = buildFuturesCard(brentRef, brentLatest, "BRENTOIL", "ICE/NYMEX");
+  const urnmRef = loadJson(path.join(DATA_DIR, "urnm-ref.json"));
+  const urnmLatest = basisLatest?.instruments?.["URNM"] || basisLatest?.instruments?.["xyz:URNM"] || null;
+  const urnmCard = buildEtfCard(urnmRef, urnmLatest, "URNM", "ARCA");
+
   const lastPulled = events.length ? Math.max(...events.map((e) => e.E || 0)) : now;
   const staleH = ((now - lastPulled) / 3600000).toFixed(1);
 
@@ -149,6 +180,9 @@ async function main() {
   ${clCard}
   ${copperCard}
   ${brentCard}
+  ${urnmCard}
+  ${brentCard}
+  ${urnmCard}
   <div class=s style="margin-bottom:12px">Data sources: local monitor NDJSON on the <b>logs</b> branch, sourced from Hyperliquid / DefiLlama / CowSwap flows already captured by the monitoring stack. BTC brief has a shortcut link to this page.</div>
   <table class=tbl><thead><tr><th>time_utc</th><th>kind</th><th>category</th><th>symbol</th><th>dex</th><th>basis</th><th>funding APR</th><th>mark</th><th>ref</th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${esc(utcStamp(r.ts))}</td><td>${esc(r.kind)}</td><td>${esc(r.category)}</td><td>${esc(r.sym)}</td><td>${esc(r.dex)}</td><td class="${cls(r.basisBps)}">${esc(fmtBps(r.basisBps))}</td><td class="${cls(r.fundingAprPct)}">${esc(fmtPct(r.fundingAprPct))}</td><td>${esc(r.markPx ?? '')}</td><td>${esc(r.refPx ?? '')}</td></tr>`).join('')}
