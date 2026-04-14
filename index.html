@@ -5,11 +5,11 @@
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}@media(max-width:860px){.grid{grid-template-columns:repeat(2,1fr)}}
   .card{background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:12px}.k{color:var(--m);font-size:11px}.v{font-size:16px;font-weight:700}.tbl{width:100%;border-collapse:collapse;background:var(--p);border:1px solid var(--ln);border-radius:12px;overflow:hidden}.tbl th,.tbl td{border-bottom:1px solid rgba(148,163,184,.15);padding:8px;text-align:left}.tbl th{color:var(--m);font-size:12px}.pos{color:var(--pos)}.neg{color:var(--neg)} a{color:#cbd5e1}
   </style></head><body><div class=w>
-  <div class=top><div class=t>Dislocations (last 24h)</div><div class=s>Generated: 2026-04-14 15:07 UTC</div></div>
+  <div class=top><div class=t>Dislocations (last 24h)</div><div class=s>Generated: 2026-04-14 15:20 UTC</div></div>
   <div class=grid>
     <div class=card><div class=k>Rows</div><div class=v>7</div></div>
     <div class=card><div class=k>Last pulled from logs</div><div class=v>2026-04-14 15:07 UTC</div></div>
-    <div class=card><div class=k>Stale</div><div class=v>0.0h</div></div>
+    <div class=card><div class=k>Stale</div><div class=v>0.2h</div></div>
     <div class=card><div class=k>Sources</div><div class=v><a href="https://github.com/sn5781/trading-infra/tree/logs/logs/monitoring" target="_blank" rel="noreferrer">logs branch</a></div></div>
   </div>
   
@@ -40,7 +40,7 @@
     </div>
     <div class=grid style="margin-bottom:10px">
       <div class=card><div class=k>HL mark</div><div class=v>$6.13</div></div>
-      <div class=card><div class=k>CME ref</div><div class=v>$6.091</div></div>
+      <div class=card><div class=k>CME ref</div><div class=v>$6.083</div></div>
       <div class=card><div class=k>CME basis</div><div class="v ">—</div></div>
       <div class=card><div class=k>Oracle basis</div><div class="v pos">+15.7 bps</div></div>
     </div>
@@ -48,8 +48,28 @@
     <div class=grid>
       <div class=card><div class=k>Roll</div><div class=v>BD10 · single-month</div></div>
       <div class=card><div class=k>Weights F/N</div><div class=v>0% / 100%</div></div>
-      <div class=card><div class=k>Front (HGJ6)</div><div class=v>$6.077</div></div>
-      <div class=card><div class=k>Next (HGK6)</div><div class=v>$6.091</div></div>
+      <div class=card><div class=k>Front (HGJ6)</div><div class=v>$6.070</div></div>
+      <div class=card><div class=k>Next (HGK6)</div><div class=v>$6.083</div></div>
+    </div>
+  </div>
+  
+  <div class=card style="margin-bottom:14px;padding:16px">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div class=t style="font-size:15px">🛢 BRENTOIL — ICE/NYMEX Reference</div>
+      <div class=s>source: ICE/NYMEX / — · IBKR: 2026-04-13 20:21 UTC</div>
+    </div>
+    <div class=grid style="margin-bottom:10px">
+      <div class=card><div class=k>HL mark</div><div class=v>$92.17</div></div>
+      <div class=card><div class=k>CME ref</div><div class=v>$91.080</div></div>
+      <div class=card><div class=k>CME basis</div><div class="v ">—</div></div>
+      <div class=card><div class=k>Oracle basis</div><div class="v neg">-60.2 bps</div></div>
+    </div>
+    <div class=s style="margin:-4px 0 12px 0">Funding APR: <span class="neg">-41.2%</span></div>
+    <div class=grid>
+      <div class=card><div class=k>Roll</div><div class=v>BD10 · single-month</div></div>
+      <div class=card><div class=k>Weights F/N</div><div class=v>0% / 100%</div></div>
+      <div class=card><div class=k>Front (BZM6)</div><div class=v>$95.885</div></div>
+      <div class=card><div class=k>Next (BZN6)</div><div class=v>$91.080</div></div>
     </div>
   </div>
   <div class=s style="margin-bottom:12px">Data sources: local monitor NDJSON on the <b>logs</b> branch, sourced from Hyperliquid / DefiLlama / CowSwap flows already captured by the monitoring stack. BTC brief has a shortcut link to this page.</div>
