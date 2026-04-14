@@ -27,6 +27,12 @@ def pick(t):
 
 def ns(v): return None if (v is None or v!=v) else v
 
+def extract_vol_oi(t):
+    vol=ns(getattr(t,'volume',None))
+    oi=ns(getattr(t,'openInterest',None))
+    if vol is None: vol=ns(getattr(t,'avVolume',None))
+    return vol,oi
+
 def main():
     try: from ib_insync import IB, Future
     except ImportError: print('ib_insync missing',file=sys.stderr); sys.exit(1)
@@ -49,19 +55,25 @@ def main():
     if next_c is None: print('no next BZ',file=sys.stderr); ib.disconnect(); sys.exit(1)
     res={}
     for lbl,c in [('front',front),('next',next_c)]:
-        t=ib.reqMktData(c,'',False,False); ib.sleep(5); px,src=pick(t)
+        t=ib.reqMktData(c,'165,293',False,False); ib.sleep(6); px,src=pick(t)
+        vol,oi=extract_vol_oi(t)
         res[lbl]={'localSymbol':c.localSymbol,'expiry':c.lastTradeDateOrContractMonth,
                   'bid':ns(t.bid),'ask':ns(t.ask),'last':ns(t.last),'close':ns(t.close),
-                  'price':px,'price_source':src}
+                  'price':px,'price_source':src,
+                  'volume':vol,'open_interest':oi}
         ib.cancelMktData(c)
     ib.disconnect()
     bd=bd_of_month(today); wf,wn=ROLL_WEIGHTS.get(bd,(0.,1.))
     fp,np_=res['front']['price'],res['next']['price']
     ref=(wf*fp+wn*np_) if fp is not None and np_ is not None else (fp if fp is not None and wf>0 else (np_ if np_ is not None else None))
+fv=res['front'].get('volume'); nv=res['next'].get('volume')
+    foi=res['front'].get('open_interest'); noi=res['next'].get('open_interest')
+    roll_vol=(fv or 0)+(nv or 0) if (fv is not None or nv is not None) else None
+    roll_oi=(foi or 0)+(noi or 0) if (foi is not None or noi is not None) else None
     out={'ts':datetime.now(timezone.utc).isoformat(),'ibkr_login_time':IBKR_LOGIN_TIME,
          'asset':'BRENTOIL','hl_key':'BRENTOIL','title':'Brent Oil','exchange':'NYMEX',
          'ibkr_port':IBKR_PORT,
-         'roll':{'business_day':bd,'roll_active':bd>=6,'w_front':wf,'w_next':wn,'ref_price':ref},
+         'roll':{'business_day':bd,'roll_active':bd>=6,'w_front':wf,'w_next':wn,'ref_price':ref,'volume':roll_vol,'open_interest':roll_oi},
          'front':res['front'],'next':res['next']}
     DATA_DIR.mkdir(parents=True,exist_ok=True); OUT_PATH.write_text(json.dumps(out,indent=2))
     print(json.dumps(out,indent=2))

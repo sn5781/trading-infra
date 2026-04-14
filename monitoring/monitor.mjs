@@ -997,6 +997,8 @@ async function runOnce({
       const openInterest = Number.parseFloat(d.assetCtxs?.[d.universe.findIndex((a) => a?.name === out.asset)]?.openInterest);
       const oi = Number.isFinite(openInterest) ? openInterest : null;
       const oiUsd = oi === null ? null : oi * out.markPx;
+      const dayNtlVlmRaw=Number.parseFloat(d.assetCtxs?.[d.universe.findIndex((a)=>a?.name===out.asset)]?.dayNtlVlm);
+      const dayNtlVlm=Number.isFinite(dayNtlVlmRaw)?dayNtlVlmRaw:null;
       // CME basis for CL: HL mark vs roll-weighted CME reference price
       let cmeBasisBps = null;
       let cmeRefPx = null;
@@ -1021,6 +1023,7 @@ async function runOnce({
         annualizedFundingPct,
         openInterest: oi,
         oiUsd,
+        dayNtlVlm: typeof dayNtlVlm !== 'undefined' ? dayNtlVlm : null,
         category: 'energy',
       });
     }
@@ -1172,6 +1175,7 @@ async function runOnce({
           annualized_funding_pct: i.annualizedFundingPct,
           open_interest: i.openInterest,
           open_interest_usd: i.oiUsd,
+          day_ntl_vlm: i.dayNtlVlm ?? null,
         },
       ])
     ),
