@@ -949,6 +949,13 @@ async function runOnce({
   splitReports = false,
 } = {}) {
   const ts = new Date().toISOString();
+
+  // Load CME CL reference (written by ibkr_cl_ref.py sidecar, see data/cl-ref.json)
+  let clRef = null;
+  try {
+    const clRefRaw = await fs.readFile(path.join(DATA_DIR, 'cl-ref.json'), 'utf8');
+    clRef = JSON.parse(clRefRaw);
+  } catch (_) { /* no CME ref available */ }
   const prev = await readState();
 
   // Build a full instrument list:
@@ -988,6 +995,15 @@ async function runOnce({
       const openInterest = Number.parseFloat(d.assetCtxs?.[d.universe.findIndex((a) => a?.name === out.asset)]?.openInterest);
       const oi = Number.isFinite(openInterest) ? openInterest : null;
       const oiUsd = oi === null ? null : oi * out.markPx;
+      // CME basis for CL: HL mark vs roll-weighted CME reference price
+      let cmeBasisBps = null;
+      let cmeRefPx = null;
+      let cmeRollState = null;
+      if (i.key === 'CL' && clRef && clRef.roll && clRef.roll.ref_price != null) {
+        cmeRefPx = clRef.roll.ref_price;
+        cmeRollState = clRef.roll;
+        cmeBasisBps = Math.round(((out.markPx - cmeRefPx) / cmeRefPx) * 10000);
+      }
       instruments.push({
         key: i.key,
         dex: out.dex,
@@ -995,6 +1011,9 @@ async function runOnce({
         markPx: out.markPx,
         oraclePx: out.oraclePx,
         basisBps,
+        cmeBasisBps,
+        cmeRefPx,
+        cmeRollState,
         fundingRate: out.fundingRate,
         annualizedFundingPct,
         openInterest: oi,
@@ -1143,6 +1162,9 @@ async function runOnce({
           markPx: i.markPx,
           oraclePx: i.oraclePx,
           basis_bps: i.basisBps,
+          cme_basis_bps: i.cmeBasisBps ?? null,
+          cme_ref_px: i.cmeRefPx ?? null,
+          cme_roll_state: i.cmeRollState ?? null,
           funding_rate: i.fundingRate,
           annualized_funding_pct: i.annualizedFundingPct,
           open_interest: i.openInterest,
