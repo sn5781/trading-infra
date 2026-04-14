@@ -1,0 +1,32 @@
+{
+  "ts": "2026-04-14T06:04:42.145096+00:00",
+  "ibkr_login_time": "2026-04-13T20:21:00-04:00",
+  "ibkr_port": 4002,
+  "roll": {
+    "business_day": 10,
+    "roll_active": true,
+    "w_front": 0.0,
+    "w_next": 1.0,
+    "ref_price": 91.685
+  },
+  "front": {
+    "localSymbol": "CLK6",
+    "expiry": "20260421",
+    "bid": 97.24,
+    "ask": 97.26,
+    "last": 97.26,
+    "close": 99.08,
+    "price": 97.25,
+    "price_source": "mid"
+  },
+  "next": {
+    "localSymbol": "CLM6",
+    "expiry": "20260519",
+    "bid": 91.67,
+    "ask": 91.7,
+    "last": 91.68,
+    "close": 92.95,
+    "price": 91.685,
+    "price_source": "mid"
+  }
+}
