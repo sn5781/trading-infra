@@ -29,6 +29,7 @@ const PRICE_ALERT_VENUE = 'HL BTC-PERP';
 const INSTRUMENTS = [
   // Energy
   { key: 'CL', dex: 'xyz', asset: 'xyz:CL' },
+  { key: 'COPPER', dex: 'xyz', asset: 'xyz:COPPER' },
   { key: 'BRENTOIL', dex: 'xyz', asset: 'xyz:BRENTOIL' },
   { key: 'USOIL', dex: 'km', asset: 'km:USOIL' },
 ];
@@ -950,12 +951,11 @@ async function runOnce({
 } = {}) {
   const ts = new Date().toISOString();
 
-  // Load CME CL reference (written by ibkr_cl_ref.py sidecar, see data/cl-ref.json)
+  // Load futures references (ibkr_cl_ref.py / ibkr_copper_ref.py sidecars)
   let clRef = null;
-  try {
-    const clRefRaw = await fs.readFile(path.join(DATA_DIR, 'cl-ref.json'), 'utf8');
-    clRef = JSON.parse(clRefRaw);
-  } catch (_) { /* no CME ref available */ }
+  let copperRef = null;
+  try { clRef = JSON.parse(await fs.readFile(path.join(DATA_DIR, 'cl-ref.json'), 'utf8')); } catch (_) {}
+  try { copperRef = JSON.parse(await fs.readFile(path.join(DATA_DIR, 'copper-ref.json'), 'utf8')); } catch (_) {}
   const prev = await readState();
 
   // Build a full instrument list:
@@ -999,9 +999,10 @@ async function runOnce({
       let cmeBasisBps = null;
       let cmeRefPx = null;
       let cmeRollState = null;
-      if (i.key === 'CL' && clRef && clRef.roll && clRef.roll.ref_price != null) {
-        cmeRefPx = clRef.roll.ref_price;
-        cmeRollState = clRef.roll;
+      const refData = i.key === 'CL' ? clRef : i.key === 'COPPER' ? copperRef : null;
+      if (refData && refData.roll && refData.roll.ref_price != null) {
+        cmeRefPx = refData.roll.ref_price;
+        cmeRollState = refData.roll;
         cmeBasisBps = Math.round(((out.markPx - cmeRefPx) / cmeRefPx) * 10000);
       }
       instruments.push({
