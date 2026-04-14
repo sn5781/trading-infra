@@ -55,6 +55,7 @@ function buildClCard(r, l) {
       <div class=card><div class=k>CME basis</div><div class="v ${cls(l?.cme_basis_bps)}">${esc(fmtBps(l?.cme_basis_bps))}</div></div>
       <div class=card><div class=k>Oracle basis</div><div class="v ${cls(l?.basis_bps)}">${esc(fmtBps(l?.basis_bps))}</div></div>
     </div>
+    <div class=s style="margin:-4px 0 12px 0">Funding APR: <span class="${cls(l?.annualized_funding_pct)}">${esc(fmtPct(l?.annualized_funding_pct))}</span></div>
     <div class=grid>
       <div class=card><div class=k>Roll</div><div class=v>BD${esc(String(roll.business_day??"?"))} · ${esc(rl)}</div></div>
       <div class=card><div class=k>Weights F/N</div><div class=v>${wf==null?"—":Math.round(wf*100)+"%"} / ${wn==null?"—":Math.round(wn*100)+"%"}</div></div>
