@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Daily GI Protocol</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0d0f12;
+    --surface: #13161b;
+    --border: #1e2329;
+    --border-active: #2a3040;
+    --text: #c8d0dc;
+    --text-dim: #4a5568;
+    --text-muted: #2d3748;
+    --pass: #1a4a2e;
+    --pass-text: #4ade80;
+    --pass-border: #166534;
+    --fail: #3d1a1a;
+    --fail-text: #f87171;
+    --warn: #2d2010;
+    --warn-text: #fb923c;
+    --accent: #3b82f6;
+    --accent-dim: #1e3a5f;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 16px;
+    max-width: 480px;
+    margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left {}
+  .protocol-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .date-display {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .score-ring {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .score-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid var(--border-active);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.3s;
+    position: relative;
+  }
+  .score-circle.perfect { border-color: var(--pass-border); }
+  .score-number {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1;
+  }
+  .score-total {
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--text-dim);
+  }
+  .score-label {
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    letter-spacing: 0.08em;
+  }
+
+  /* Section labels */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin: 16px 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Intervention cards */
+  .intervention {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .intervention:active { transform: scale(0.99); }
+  .intervention.checked {
+    border-color: var(--pass-border);
+    background: #0f1a14;
+  }
+  .intervention.failed {
+    border-color: #7f1d1d;
+    background: #150e0e;
+  }
+
+  .intervention-main {
+    display: flex;
+    align-items: flex-start;
+    padding: 12px 12px 12px 12px;
+    gap: 10px;
+  }
+  .intervention-index {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    min-width: 14px;
+    padding-top: 2px;
+  }
+  .intervention-content { flex: 1; }
+  .intervention-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.3;
+    margin-bottom: 3px;
+    transition: color 0.2s;
+  }
+  .intervention.checked .intervention-title { color: var(--pass-text); }
+  .intervention.failed .intervention-title { color: var(--fail-text); }
+
+  .intervention-gate {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+  .gate-value {
+    color: var(--warn-text);
+    font-weight: 500;
+  }
+  .intervention.checked .gate-value { color: var(--pass-text); }
+
+  /* Checkbox control */
+  .check-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 52px;
+    padding-top: 1px;
+  }
+  .check-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border-active);
+    background: transparent;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--text-dim);
+  }
+  .check-btn:hover { border-color: var(--text-dim); color: var(--text); }
+  .check-btn.pass-btn { border-color: var(--pass-border); color: var(--pass-text); background: rgba(74,222,128,0.05); }
+  .check-btn.fail-btn { border-color: #7f1d1d; color: var(--fail-text); background: rgba(248,113,113,0.05); }
+  .check-btn.active-pass { background: var(--pass-border); color: #fff; border-color: var(--pass-border); }
+  .check-btn.active-fail { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
+
+  /* Timing badge */
+  .timing-badge {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.06em;
+    padding: 2px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border-active);
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Expandable detail */
+  .intervention-detail {
+    display: none;
+    padding: 0 12px 10px 36px;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+  .intervention-detail.open { display: block; }
+  .detail-example {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    margin-top: 4px;
+  }
+
+  /* Expand toggle */
+  .expand-toggle {
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--text-muted);
+    padding: 4px 12px 8px 36px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+  }
+  .expand-toggle:hover { color: var(--text-dim); }
+
+  /* Notes section */
+  .notes-area {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .notes-label {
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .notes-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 12px;
+    resize: none;
+    outline: none;
+    line-height: 1.5;
+    min-height: 50px;
+  }
+  .notes-input::placeholder { color: var(--text-muted); }
+
+  /* Symptom tracker */
+  .symptom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .symptom-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    flex: 1;
+  }
+  .symptom-scale {
+    display: flex;
+    gap: 4px;
+  }
+  .scale-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: 1px solid var(--border-active);
+    background: transparent;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .scale-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .scale-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+  /* Reset button */
+  .reset-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+  }
+  .reset-btn {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 10px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    transition: all 0.15s;
+  }
+  .reset-btn:hover { color: var(--text-dim); border-color: var(--border-active); }
+  .streak-display {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .streak-display span { color: var(--warn-text); }
+
+  /* Progress bar */
+  .progress-bar-wrap {
+    height: 2px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 12px 0 16px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--pass-text);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  /* Footer */
+  .footer {
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 12px 0 4px;
+    letter-spacing: 0.1em;
+  }
+
+  /* Escalation note */
+  .escalation-box {
+    background: #140e08;
+    border: 1px solid #7c3b0a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .escalation-title {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: var(--warn-text);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .escalation-items {
+    font-size: 11px;
+    color: #a16207;
+    line-height: 1.6;
+  }
+  .escalation-items li { margin-left: 14px; }
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="protocol-label">GI Recovery Protocol</div>
+    <div class="date-display" id="dateDisplay">—</div>
+  </div>
+  <div class="score-ring">
+    <div class="score-circle" id="scoreCircle">
+      <div class="score-number" id="scoreNum">0</div>
+      <div class="score-total">/7</div>
+    </div>
+    <div class="score-label">TODAY</div>
+  </div>
+</div>
+
+<div class="progress-bar-wrap">
+  <div class="progress-bar-fill" id="progressBar"></div>
+</div>
+
+<!-- DIET SECTION -->
+<div class="section-label">Dietary gates</div>
+
+<!-- 1. Fat per meal -->
+<div class="intervention" id="card-0">
+  <div class="intervention-main">
+    <div class="intervention-index">01</div>
+    <div class="intervention-content">
+      <div class="intervention-title">≥10g long-chain fat per meal</div>
+      <div class="intervention-gate">Gate: <span class="gate-value">≥10g</span> at each meal — no MCT/coconut oil</div>
+      <div class="timing-badge">EVERY MEAL</div>
+    </div>
+    <div class="check-controls">
+      <button class="check-btn pass-btn" onclick="toggleCard(0,'pass',event)">✓ YES</button>
+      <button class="check-btn fail-btn" onclick="toggleCard(0,'fail',event)">✗ NO</button>
+    </div>
+  </div>
+  <div class="expand-toggle" onclick="toggleDetail(0,event)">▸ examples</div>
+  <div class="intervention-detail" id="detail-0">
+    Count the fat grams, not volume. Sources that work:
+    <div class="detail-example">
+      ~15g macadamia nuts = 10g fat ✓<br>
+      ~21g peanuts = 10g fat ✓<br>
+      1 tbsp olive oil = 14g fat ✓<br>
+      ¼ avocado = 8g fat ✓<br>
+      MCT oil / coconut milk = does NOT count
+    </div>
+    This is the highest-priority gate. Gallbladder cannot empty below ~10g LCT per meal.
+  </div>
+</div>
+
+<!-- 2. Fiber target -->
+<div class="intervention" id="card-1">
+  <div class="intervention-main">
+    <div class="intervention-index">02</div>
+    <div class="intervention-content">
+      <div class="intervention-title">Fiber 25–30g/day, no inulin/wheat bran</div>
+      <div class="intervention-gate">Gate: <span class="gate-value">&lt;35g</span> total daily fiber, soluble sources only</div>
+      <div class="timing-badge">DAILY TOTAL</div>
+    </div>
+    <div class="check-controls">
+      <button class="check-btn pass-btn" onclick="toggleCard(1,'pass',event)">✓ YES</button>
+      <button class="check-btn fail-btn" onclick="toggleCard(1,'fail',event)">✗ NO</button>
+    </div>
+  </div>
+  <div class="expand-toggle" onclick="toggleDetail(1,event)">▸ examples</div>
+  <div class="intervention-detail" id="detail-1">
+    Reduce 5g every 3–5 days from previous 50g+ intake. Track daily total.<br>
+    <div class="detail-example">
+      Avoid: inulin, FOS, wheat bran, chicory root<br>
+      Prefer: psyllium husk, oats, white rice, banana<br>
+      App option: Cronometer or MyFitnessPal fiber column
+    </div>
+  </div>
+</div>
+
+<!-- 3. Fructose cap -->
+<div class="intervention" id="card-2">
+  <div class="intervention-main">
+    <div class="intervention-index">03</div>
+    <div class="intervention-content">
+      <div class="intervention-title">Fructose &lt;15g per sitting, no excess-fructose fruit</div>
+      <div class="intervention-gate">Gate: <span class="gate-value">no apples / pears / mango / dried fruit / honey</span> today</div>
+      <div class="timing-badge">PER MEAL</div>
+    </div>
+    <div class="check-controls">
+      <button class="check-btn pass-btn" onclick="toggleCard(2,'pass',event)">✓ YES</button>
+      <button class="check-btn fail-btn" onclick="toggleCard(2,'fail',event)">✗ NO</button>
+    </div>
+  </div>
+  <div class="expand-toggle" onclick="toggleDetail(2,event)">▸ safe/unsafe list</div>
+  <div class="intervention-detail" id="detail-2">
+    <div class="detail-example">
+      AVOID: apple, pear, mango, watermelon, cherries, dried fruit, grapes, agave, HFCS, fruit juice<br><br>
+      OK: banana, blueberry, strawberry, orange, kiwi, raspberry, cantaloupe
+    </div>
+    80% of adults fail a 50g fructose breath test. Threshold for symptoms is ~25g/sitting.
+  </div>
+</div>
+
+<!-- 4. Dairy trial -->
+<div class="intervention" id="card-3">
+  <div class="intervention-main">
+    <div class="intervention-index">04</div>
+    <div class="intervention-content">
+      <div class="intervention-title">A2 dairy or no dairy</div>
+      <div class="intervention-gate">Gate: <span class="gate-value">zero A1 β-casein dairy</span> — no standard lactose-free milk/yogurt</div>
+      <div class="timing-badge">ALL DAY</div>
+    </div>
+    <div class="check-controls">
+      <button class="check-btn pass-btn" onclick="toggleCard(3,'pass',event)">✓ YES</button>
+      <button class="check-btn fail-btn" onclick="toggleCard(3,'fail',event)">✗ NO</button>
+    </div>
+  </div>
+  <div class="expand-toggle" onclick="toggleDetail(3,event)">▸ note</div>
+  <div class="intervention-detail" id="detail-3">
+    Lactose-free milk still contains A1 β-casein. A1 releases BCM-7, an opioid peptide that delays GI transit and increases inflammation. Run a 2–4 week elimination. A2 milk or no dairy = pass.
+  </div>
+</div>
+
+<!-- MOVEMENT SECTION -->
+<div class="section-label">Movement gates</div>
+
+<!-- 5. No fasted calisthenics -->
+<div class="intervention" id="card-4">
+  <div class="intervention-main">
+    <div class="intervention-index">05</div>
+    <div class="intervention-content">
+      <div class="intervention-title">Calisthenics only ≥2h after a fat-containing meal</div>
+      <div class="intervention-gate">Gate: <span class="gate-value">never train fasted</span> — pre-meal must include fat + carbs</div>
+      <div class="timing-badge">BEFORE TRAINING</div>
+    </div>
+    <div class="check-controls">
+      <button class="check-btn pass-btn" onclick="toggleCard(4,'pass',event)">✓ YES</button>
+      <button class="check-btn fail-btn" onclick="toggleCard(4,'fail',event)">✗ NO</button>
+    </div>
+  </div>
+  <div class="expand-toggle" onclick="toggleDetail(4,event)">▸ pre-workout meal</div>
+  <div class="intervention-detail" id="detail-4">
+    Low-fiber, moderate carb, low-fat (≤15g), eaten 2h before. Fat present = gallbladder empties before IAP spikes.<br>
+    <div class="detail-example">
+      Option A: Low-fat yogurt 150g + 15g macadamia nuts + banana<br>
+      Option B: White rice + small portion fish or egg<br>
+      Option C: Rice cakes + thin nut butter (2 tsp) + banana
+    </div>
+    Splanchnic blood flow drops 80% within 10 min of intense exercise. A fed gut tolerates this far better.
+  </div>
+</div>
+
+<!-- 6. Walking -->
+<div class="intervention" id="card-5">
+  <div class="intervention-main">
+    <div class="intervention-index">06</div>
+    <div class="intervention-content">
+      <div class="intervention-title">≥60 min low-intensity walking/day</div>
+      <div class="intervention-gate">Gate: <span class="gate-value">≥1 post-meal walk ≥15 min</span> at easy pace</div>
+      <div class="timing-badge">POST-MEAL</div>
+    </div>
+    <div class="check-controls">
+      <button class="check-btn pass-btn" onclick="toggleCard(5,'pass',event)">✓ YES</button>
+      <button class="check-btn fail-btn" onclick="toggleCard(5,'fail',event)">✗ NO</button>
+    </div>
+  </div>
+  <div class="expand-toggle" onclick="toggleDetail(5,event)">▸ why</div>
+  <div class="intervention-detail" id="detail-5">
+    Postprandial walking outperformed prokinetic medication in an RCT (Hosseini-Asl, 2021). Accelerates gastric emptying 13%. Target: 3× 15–20 min walks after each meal. Outdoor/hiking sessions count double.
+    <div class="detail-example">
+      Minimum effective dose: 10–15 min after eating<br>
+      Target: 60–120 min total across day
+    </div>
+  </div>
+</div>
+
+<!-- MEAL STRUCTURE SECTION -->
+<div class="section-label">Meal structure</div>
+
+<!-- 7. No OMAD -->
+<div class="intervention" id="card-6">
+  <div class="intervention-main">
+    <div class="intervention-index">07</div>
+    <div class="intervention-content">
+      <div class="intervention-title">At least 2 meals today (no OMAD)</div>
+      <div class="intervention-gate">Gate: <span class="gate-value">≥2 meals spaced ≥4h apart</span>, each with ≥10g LCT fat</div>
+      <div class="timing-badge">MEAL TIMING</div>
+    </div>
+    <div class="check-controls">
+      <button class="check-btn pass-btn" onclick="toggleCard(6,'pass',event)">✓ YES</button>
+      <button class="check-btn fail-btn" onclick="toggleCard(6,'fail',event)">✗ NO</button>
+    </div>
+  </div>
+  <div class="expand-toggle" onclick="toggleDetail(6,event)">▸ transition pace</div>
+  <div class="intervention-detail" id="detail-6">
+    Phase 1 (week 1–2): 2 meals, 6–8h apart → Phase 2 (week 2+): 3 meals, 4–5h apart. Each gap allows 1 MMC cycle (90–230 min fasting motility sweep). Splitting same calories across meals: reduces peak fermentation, restores 6–8 gallbladder empties/day vs 2–3 on OMAD.
+  </div>
+</div>
+
+<!-- SYMPTOM LOG -->
+<div class="section-label">Symptom log</div>
+
+<div class="notes-area">
+  <div class="notes-label">Pain intensity today (0–5 scale)</div>
+  <div class="symptom-row">
+    <div class="symptom-label">Morning (fasted)</div>
+    <div class="symptom-scale" id="scale-morning"></div>
+  </div>
+  <div class="symptom-row">
+    <div class="symptom-label">Postprandial peak</div>
+    <div class="symptom-scale" id="scale-post"></div>
+  </div>
+  <div class="symptom-row">
+    <div class="symptom-label">Evening</div>
+    <div class="symptom-scale" id="scale-evening"></div>
+  </div>
+</div>
+
+<div class="notes-area">
+  <div class="notes-label">Notes (triggers, deviations, foods)</div>
+  <textarea class="notes-input" placeholder="e.g. ate mango — symptoms +2 postprandial. Trained at 11am, 2h post breakfast. No symptoms during walk." id="notesInput" rows="3"></textarea>
+</div>
+
+<!-- ESCALATION -->
+<div class="section-label">Escalate immediately if</div>
+<div class="escalation-box">
+  <div class="escalation-title">⚠ Stop protocol — seek evaluation</div>
+  <div class="escalation-items">
+    <ul>
+      <li>Blood in stool</li>
+      <li>Unintentional weight loss</li>
+      <li>Fever or night sweats</li>
+      <li>Pain becomes nocturnal or constant</li>
+      <li>Pain shifts qualitatively — sharper, different location</li>
+    </ul>
+  </div>
+</div>
+
+<!-- BOTTOM ROW -->
+<div class="reset-row">
+  <button class="reset-btn" onclick="resetDay()">↺ RESET DAY</button>
+  <div class="streak-display">streak <span id="streakCount">0</span> days</div>
+</div>
+
+<div class="footer">GI RECOVERY PROTOCOL · REVIEW BEFORE EACH MEAL · NOT MEDICAL ADVICE</div>
+
+<script>
+  const TOTAL = 7;
+  const states = new Array(TOTAL).fill(null); // null | 'pass' | 'fail'
+  const detailOpen = new Array(TOTAL).fill(false);
+  const scaleValues = { morning: null, post: null, evening: null };
+
+  // Date
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const now = new Date();
+  document.getElementById('dateDisplay').textContent =
+    days[now.getDay()] + ' ' + months[now.getMonth()] + ' ' + now.getDate();
+
+  // Build scale buttons
+  function buildScales() {
+    ['morning','post','evening'].forEach(id => {
+      const el = document.getElementById('scale-' + id);
+      el.innerHTML = '';
+      for (let i = 0; i <= 5; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'scale-btn' + (scaleValues[id] === i ? ' active' : '');
+        btn.textContent = i;
+        btn.onclick = (e) => { e.stopPropagation(); scaleValues[id] = i; buildScales(); saveState(); };
+        el.appendChild(btn);
+      }
+    });
+  }
+
+  function toggleCard(idx, result, e) {
+    e.stopPropagation();
+    if (states[idx] === result) {
+      states[idx] = null;
+    } else {
+      states[idx] = result;
+    }
+    updateUI();
+    saveState();
+  }
+
+  function toggleDetail(idx, e) {
+    e.stopPropagation();
+    detailOpen[idx] = !detailOpen[idx];
+    const el = document.getElementById('detail-' + idx);
+    const toggle = el.previousElementSibling;
+    if (detailOpen[idx]) {
+      el.classList.add('open');
+      toggle.textContent = toggle.textContent.replace('▸', '▾');
+    } else {
+      el.classList.remove('open');
+      toggle.textContent = toggle.textContent.replace('▾', '▸');
+    }
+  }
+
+  function updateUI() {
+    const passed = states.filter(s => s === 'pass').length;
+    document.getElementById('scoreNum').textContent = passed;
+    const pct = (passed / TOTAL * 100).toFixed(0);
+    document.getElementById('progressBar').style.width = pct + '%';
+    const circle = document.getElementById('scoreCircle');
+    circle.classList.toggle('perfect', passed === TOTAL);
+
+    for (let i = 0; i < TOTAL; i++) {
+      const card = document.getElementById('card-' + i);
+      card.classList.remove('checked', 'failed');
+      if (states[i] === 'pass') card.classList.add('checked');
+      if (states[i] === 'fail') card.classList.add('failed');
+
+      // Update button active states
+      const btns = card.querySelectorAll('.check-btn');
+      btns[0].classList.toggle('active-pass', states[i] === 'pass');
+      btns[1].classList.toggle('active-fail', states[i] === 'fail');
+    }
+  }
+
+  function resetDay() {
+    for (let i = 0; i < TOTAL; i++) states[i] = null;
+    Object.keys(scaleValues).forEach(k => scaleValues[k] = null);
+    document.getElementById('notesInput').value = '';
+    updateUI();
+    buildScales();
+    saveState();
+  }
+
+  // Persistence (localStorage - save by date key)
+  const dateKey = 'gi_' + now.getFullYear() + '_' + now.getMonth() + '_' + now.getDate();
+  const streakKey = 'gi_streak';
+
+  function saveState() {
+    const data = {
+      states: states,
+      scaleValues: scaleValues,
+      notes: document.getElementById('notesInput').value
+    };
+    localStorage.setItem(dateKey, JSON.stringify(data));
+
+    // Update streak
+    const passed = states.filter(s => s === 'pass').length;
+    if (passed === TOTAL) {
+      let streak = parseInt(localStorage.getItem(streakKey) || '0');
+      const lastKey = localStorage.getItem('gi_lastPerfect');
+      const todayStr = dateKey;
+      if (lastKey !== todayStr) {
+        streak++;
+        localStorage.setItem(streakKey, streak);
+        localStorage.setItem('gi_lastPerfect', todayStr);
+        document.getElementById('streakCount').textContent = streak;
+      }
+    }
+  }
+
+  function loadState() {
+    const raw = localStorage.getItem(dateKey);
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        if (data.states) data.states.forEach((s,i) => states[i] = s);
+        if (data.scaleValues) Object.assign(scaleValues, data.scaleValues);
+        if (data.notes) document.getElementById('notesInput').value = data.notes;
+      } catch(e) {}
+    }
+    const streak = parseInt(localStorage.getItem(streakKey) || '0');
+    document.getElementById('streakCount').textContent = streak;
+    document.getElementById('notesInput').addEventListener('input', saveState);
+    updateUI();
+    buildScales();
+  }
+
+  loadState();
+</script>
+</body>
+</html>
