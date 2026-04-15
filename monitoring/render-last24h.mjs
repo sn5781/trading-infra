@@ -36,7 +36,9 @@ function fmtPct(x) { const n = num(x); if (n === null) return '—'; return `${n
 function cls(x) { const n = num(x); return n === null ? '' : (n >= 0 ? 'pos' : 'neg'); }
 function fmtPx(x, d = 3) { const n = num(x); if (n === null) return "—"; return "$" + n.toFixed(d); }
 
-function fmtM(x){const n=num(x);if(n===null)return'—';if(Math.abs(n)>=1e9)return'fp) { try { return JSON.parse(rfs(fp, "utf8")); } catch { return null; } }
+function fmtM(x) { const n = num(x); if (n === null) return '—'; if (Math.abs(n) >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B'; if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M'; if (Math.abs(n) >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K'; return '$' + n.toFixed(0); }
+function fmtContracts(x) { const n = num(x); if (n === null) return '—'; if (n >= 1e6) return (n/1e6).toFixed(2)+'M'; if (n >= 1e3) return (n/1e3).toFixed(1)+'K'; return n.toFixed(0); }
+function loadJson(fp) { try { return JSON.parse(rfs(fp, "utf8")); } catch { return null; } }
 function buildFuturesCard(r, l, cardTitle, exchangeLabel) {
   if (!r && !l) return "";
   const roll = r?.roll || {}; const front = r?.front || {}; const next = r?.next || {};
