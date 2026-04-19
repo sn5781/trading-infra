@@ -1,5 +1,5 @@
 <!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>BTC Brief</title><style>:root{--bg:#0a0e1a;--p:#0f172a;--m:#94a3b8;--fg:#e5e7eb;--pos:#4ade80;--neg:#f87171;--ln:#1f2a44}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.w{max-width:1200px;margin:0 auto;padding:20px}.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}.t{font-weight:700}.s{color:var(--m);font-size:12px}.nav{margin:0 0 12px 0}.nav a{display:inline-block;margin-right:10px;padding:6px 10px;border:1px solid var(--ln);border-radius:999px;background:rgba(255,255,255,.02)}.bar{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-bottom:14px}.kv{padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04)}.k{color:var(--m);font-size:11px}.v{font-size:16px;font-weight:700}.pos{color:var(--pos)}.neg{color:var(--neg)}.muted{color:var(--m)}.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.g{grid-template-columns:1fr}.bar{grid-template-columns:repeat(2,1fr)}}.c{background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:14px}.h{font-weight:700;margin:0 0 10px 0}.sg{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.sg{grid-template-columns:1fr}}.row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.2)}.row:last-child{border-bottom:none}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid rgba(148,163,184,.15);padding:8px;text-align:left;vertical-align:top}.tbl th{color:var(--m);font-size:12px}.badge{display:inline-block;margin-left:8px;padding:2px 6px;border-radius:999px;background:rgba(74,222,128,.15);border:1px solid rgba(74,222,128,.25);color:var(--pos);font-size:11px}.err{margin-top:8px;color:#fbbf24;font-size:12px;white-space:pre-wrap}.tip{color:var(--m);cursor:help;user-select:none}.lnk{color:var(--fg);text-decoration:underline}</style></head><body><div class=w>
-<div class=top><div class=t>BTC Derivatives Brief</div><div class=s>Updated: 2026-04-19 05:21 UTC · Now: <span id=utcNow>—</span> · Stale: <span id=stale>—</span></div></div>
+<div class=top><div class=t>BTC Derivatives Brief</div><div class=s>Updated: 2026-04-19 07:07 UTC · Now: <span id=utcNow>—</span> · Stale: <span id=stale>—</span></div></div>
 <div class=nav><a class=lnk href="/trading-infra/dislocations/">Open canonical /dislocations</a></div>
 
   <script>
@@ -17,7 +17,7 @@
       return s+'s';
     }
 
-    var updatedUtcMs = Date.parse('2026-04-19 05:21 UTC');
+    var updatedUtcMs = Date.parse('2026-04-19 07:07 UTC');
     function tick(){
       var now = new Date();
       var nowUtcStr = now.getUTCFullYear()+'-'+pad2(now.getUTCMonth()+1)+'-'+pad2(now.getUTCDate())+' '+pad2(now.getUTCHours())+':'+pad2(now.getUTCMinutes())+' UTC';
@@ -33,7 +33,7 @@
   </script>
   
 <div class=bar>
-<div class=kv><div class=k>BTC (Binance)</div><div class=v>$75,549.99</div></div><div class=kv><div class=k>BTC 24h</div><div class=v><span class=neg>-2.13%</span></div></div><div class=kv><div class=k>BTC 7d</div><div class=v><span class=pos>+3.43%</span></div></div><div class=kv><div class=k>BTC OI (HL)</div><div class=v>$2,102,746,662</div></div><div class=kv><div class=k>ETH (Binance)</div><div class=v>$2,331.76</div></div><div class=kv><div class=k>ETH OI (HL)</div><div class=v>$921,539,480</div></div>
+<div class=kv><div class=k>BTC (Binance)</div><div class=v>$75,254.27</div></div><div class=kv><div class=k>BTC 24h</div><div class=v><span class=neg>-2.38%</span></div></div><div class=kv><div class=k>BTC 7d</div><div class=v><span class=pos>+3.03%</span></div></div><div class=kv><div class=k>BTC OI (HL)</div><div class=v>$2,090,313,689</div></div><div class=kv><div class=k>ETH (Binance)</div><div class=v>$2,322.71</div></div><div class=kv><div class=k>ETH OI (HL)</div><div class=v>$920,123,651</div></div>
 </div>
 <div class=g>
   <div class=c><div class=h>Liquidation &amp; Perps</div><div class=sg>
@@ -52,16 +52,16 @@
    - posSide=long & side=sell => LONG liquidation
 6) Show top 3 buckets within +/-10% of spot (above=shorts, below=longs).
 Note: This is realized liq flow, not a predictive liquidation heatmap.">[?]</span></div>
-      <div class=muted style="margin-bottom:6px">Short above spot</div><div class=row><div class=k>$75,700</div><div class=v>$36,422,782</div></div><div class=row><div class=k>$75,600</div><div class=v>$20,954,506</div></div><div class=row><div class=k>$76,500</div><div class=v>$18,961,093</div></div>
-      <div class=muted style="margin-bottom:6px; margin-top:8px">Long below spot</div><div class=row><div class=k>$75,500</div><div class=v>$200,236,525</div></div><div class=row><div class=k>$75,100</div><div class=v>$86,363,282</div></div><div class=row><div class=k>$75,300</div><div class=v>$33,860,085</div></div>
+      <div class=muted style="margin-bottom:6px">Short above spot</div><div class=row><div class=k>$75,700</div><div class=v>$36,422,782</div></div><div class=row><div class=k>$75,600</div><div class=v>$21,089,860</div></div><div class=row><div class=k>$76,500</div><div class=v>$18,961,093</div></div>
+      <div class=muted style="margin-bottom:6px; margin-top:8px">Long below spot</div><div class=row><div class=k>$75,100</div><div class=v>$86,363,282</div></div><div class=row><div class=k>$75,200</div><div class=v>$30,597,486</div></div><div class=row><div class=k>$75,000</div><div class=v>$13,425,524</div></div>
     </div>
   </div><div class=err>coinglass: Upgrade plan <a class=lnk href="https://www.coinglass.com/liquidation-levels" target="_blank" rel="noreferrer">open CoinGlass liquidation-levels</a></div><div style="height:10px"></div><div class=muted style="margin-bottom:6px">Hyperliquid funding</div>
   <table class=tbl><thead><tr><th></th><th>8h</th><th>APR</th><th>Premium</th></tr></thead><tbody>
-    <tr><td><b>BTC</b></td><td><span class=neg>-0.0086%</span></td><td>-9.45%</td><td>-0.0582%</td></tr>
-    <tr><td><b>ETH</b></td><td><span class=neg>-0.0172%</span></td><td>-18.87%</td><td>-0.0729%</td></tr>
+    <tr><td><b>BTC</b></td><td><span class=neg>-0.0106%</span></td><td>-11.56%</td><td>-0.0718%</td></tr>
+    <tr><td><b>ETH</b></td><td><span class=neg>-0.0166%</span></td><td>-18.19%</td><td>-0.0775%</td></tr>
   </tbody></table></div>
   <div class=c><div class=h>Funding Arb Alerts</div><div class=muted style="margin-bottom:6px">Funding rates (8h %)</div>
-  <table class=tbl><thead><tr><th></th><th>Binance</th><th>Bybit</th><th>OKX</th><th>Hyperliquid</th></tr></thead><tbody><tr><td><b>BTC</b></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=neg>-0.0086%</span></td></tr><tr><td><b>ETH</b></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=neg>-0.0172%</span></td></tr></tbody></table>
+  <table class=tbl><thead><tr><th></th><th>Binance</th><th>Bybit</th><th>OKX</th><th>Hyperliquid</th></tr></thead><tbody><tr><td><b>BTC</b></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=neg>-0.0106%</span></td></tr><tr><td><b>ETH</b></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=neg>-0.0166%</span></td></tr></tbody></table>
   <div style="height:10px"></div><div class=muted style="margin-bottom:6px">Arb spreads (max - min)</div><div class="muted">—</div></div>
 </div><div style="height:14px"></div><div class=c><div class=h>Top 24h dislocations from repo logs</div><div class=muted style="margin-bottom:6px">Strongest basis / funding events across tracked assets using only logs-branch NDJSON from the last 24h.</div><table class=tbl><thead><tr><th>Asset</th><th>Basis</th><th>Funding APR</th><th>Category</th></tr></thead><tbody><tr><td><b>km:USOIL</b></td><td>136.7 bps</td><td>+173.5%</td><td>ALL</td></tr><tr><td><b>xyz:CL</b></td><td>150.5 bps</td><td>+50.9%</td><td>ALL</td></tr><tr><td><b>xyz:BRENTOIL</b></td><td>124.5 bps</td><td>+82.6%</td><td>ALL</td></tr><tr><td><b>ethereum:0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84</b></td><td>82.1 bps</td><td>—</td><td>ALL</td></tr><tr><td><b>xyz:URNM</b></td><td>-72.8 bps</td><td>-37.1%</td><td>ALL</td></tr><tr><td><b>ethereum:0x18084fbA666a33d37592fA2633fD49a74DD93a88</b></td><td>-61.1 bps</td><td>—</td><td>ALL</td></tr><tr><td><b>ethereum:0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599</b></td><td>-46.9 bps</td><td>—</td><td>ALL</td></tr><tr><td><b>ethereum:0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2</b></td><td>43.6 bps</td><td>—</td><td>ALL</td></tr></tbody></table></div><div class=s style="margin-top:12px">Sources: Binance · Hyperliquid · CoinGlass · Bybit · OKX · repo logs branch</div>
 </div></body></html>
