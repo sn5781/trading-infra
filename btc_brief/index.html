@@ -1,5 +1,5 @@
 <!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>BTC Brief</title><style>:root{--bg:#0a0e1a;--p:#0f172a;--m:#94a3b8;--fg:#e5e7eb;--pos:#4ade80;--neg:#f87171;--ln:#1f2a44}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.w{max-width:1200px;margin:0 auto;padding:20px}.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}.t{font-weight:700}.s{color:var(--m);font-size:12px}.nav{margin:0 0 12px 0}.nav a{display:inline-block;margin-right:10px;padding:6px 10px;border:1px solid var(--ln);border-radius:999px;background:rgba(255,255,255,.02)}.bar{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-bottom:14px}.kv{padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04)}.k{color:var(--m);font-size:11px}.v{font-size:16px;font-weight:700}.pos{color:var(--pos)}.neg{color:var(--neg)}.muted{color:var(--m)}.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.g{grid-template-columns:1fr}.bar{grid-template-columns:repeat(2,1fr)}}.c{background:var(--p);border:1px solid var(--ln);border-radius:12px;padding:14px}.h{font-weight:700;margin:0 0 10px 0}.sg{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:860px){.sg{grid-template-columns:1fr}}.row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.2)}.row:last-child{border-bottom:none}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid rgba(148,163,184,.15);padding:8px;text-align:left;vertical-align:top}.tbl th{color:var(--m);font-size:12px}.badge{display:inline-block;margin-left:8px;padding:2px 6px;border-radius:999px;background:rgba(74,222,128,.15);border:1px solid rgba(74,222,128,.25);color:var(--pos);font-size:11px}.err{margin-top:8px;color:#fbbf24;font-size:12px;white-space:pre-wrap}.tip{color:var(--m);cursor:help;user-select:none}.lnk{color:var(--fg);text-decoration:underline}</style></head><body><div class=w>
-<div class=top><div class=t>BTC Derivatives Brief</div><div class=s>Updated: 2026-04-30 19:06 UTC · Now: <span id=utcNow>—</span> · Stale: <span id=stale>—</span></div></div>
+<div class=top><div class=t>BTC Derivatives Brief</div><div class=s>Updated: 2026-04-30 21:49 UTC · Now: <span id=utcNow>—</span> · Stale: <span id=stale>—</span></div></div>
 <div class=nav><a class=lnk href="/trading-infra/dislocations/">Open canonical /dislocations</a></div>
 
   <script>
@@ -17,7 +17,7 @@
       return s+'s';
     }
 
-    var updatedUtcMs = Date.parse('2026-04-30 19:06 UTC');
+    var updatedUtcMs = Date.parse('2026-04-30 21:49 UTC');
     function tick(){
       var now = new Date();
       var nowUtcStr = now.getUTCFullYear()+'-'+pad2(now.getUTCMonth()+1)+'-'+pad2(now.getUTCDate())+' '+pad2(now.getUTCHours())+':'+pad2(now.getUTCMinutes())+' UTC';
@@ -33,7 +33,7 @@
   </script>
   
 <div class=bar>
-<div class=kv><div class=k>BTC (Binance)</div><div class=v>$76,340.71</div></div><div class=kv><div class=k>BTC 24h</div><div class=v><span class=pos>+1.22%</span></div></div><div class=kv><div class=k>BTC 7d</div><div class=v><span class=neg>-2.35%</span></div></div><div class=kv><div class=k>BTC OI (HL)</div><div class=v>$2,142,891,569</div></div><div class=kv><div class=k>ETH (Binance)</div><div class=v>$2,259.40</div></div><div class=kv><div class=k>ETH OI (HL)</div><div class=v>$1,143,562,676</div></div>
+<div class=kv><div class=k>BTC (Binance)</div><div class=v>$76,324.79</div></div><div class=kv><div class=k>BTC 24h</div><div class=v><span class=pos>+0.44%</span></div></div><div class=kv><div class=k>BTC 7d</div><div class=v><span class=neg>-2.37%</span></div></div><div class=kv><div class=k>BTC OI (HL)</div><div class=v>$2,143,425,756</div></div><div class=kv><div class=k>ETH (Binance)</div><div class=v>$2,257.06</div></div><div class=kv><div class=k>ETH OI (HL)</div><div class=v>$1,129,711,540</div></div>
 </div>
 <div class=g>
   <div class=c><div class=h>Liquidation &amp; Perps</div><div class=sg>
@@ -52,16 +52,16 @@
    - posSide=long & side=sell => LONG liquidation
 6) Show top 3 buckets within +/-10% of spot (above=shorts, below=longs).
 Note: This is realized liq flow, not a predictive liquidation heatmap.">[?]</span></div>
-      <div class=muted style="margin-bottom:6px">Short above spot</div><div class=row><div class=k>$76,500</div><div class=v>$67,739,915</div></div><div class=row><div class=k>$76,900</div><div class=v>$65,547,941</div></div><div class=row><div class=k>$76,600</div><div class=v>$38,683,598</div></div>
-      <div class=muted style="margin-bottom:6px; margin-top:8px">Long below spot</div><div class=row><div class=k>$75,400</div><div class=v>$95,329,242</div></div><div class=row><div class=k>$75,200</div><div class=v>$28,296,080</div></div><div class=row><div class=k>$75,800</div><div class=v>$28,016,655</div></div>
+      <div class=muted style="margin-bottom:6px">Short above spot</div><div class=row><div class=k>$76,500</div><div class=v>$69,770,171</div></div><div class=row><div class=k>$76,900</div><div class=v>$65,547,941</div></div><div class=row><div class=k>$76,600</div><div class=v>$38,683,598</div></div>
+      <div class=muted style="margin-bottom:6px; margin-top:8px">Long below spot</div><div class=row><div class=k>$75,400</div><div class=v>$95,243,321</div></div><div class=row><div class=k>$75,200</div><div class=v>$28,296,080</div></div><div class=row><div class=k>$75,800</div><div class=v>$28,016,655</div></div>
     </div>
   </div><div class=err>coinglass: Too Many Requests <a class=lnk href="https://www.coinglass.com/liquidation-levels" target="_blank" rel="noreferrer">open CoinGlass liquidation-levels</a></div><div style="height:10px"></div><div class=muted style="margin-bottom:6px">Hyperliquid funding</div>
   <table class=tbl><thead><tr><th></th><th>8h</th><th>APR</th><th>Premium</th></tr></thead><tbody>
-    <tr><td><b>BTC</b></td><td><span class=neg>-0.0025%</span></td><td>-2.70%</td><td>-0.0451%</td></tr>
-    <tr><td><b>ETH</b></td><td><span class=pos>+0.0076%</span></td><td>+8.37%</td><td>-0.0403%</td></tr>
+    <tr><td><b>BTC</b></td><td><span class=neg>-0.0089%</span></td><td>-9.79%</td><td>-0.0592%</td></tr>
+    <tr><td><b>ETH</b></td><td><span class=pos>+0.0100%</span></td><td>+10.95%</td><td>-0.0394%</td></tr>
   </tbody></table></div>
   <div class=c><div class=h>Funding Arb Alerts</div><div class=muted style="margin-bottom:6px">Funding rates (8h %)</div>
-  <table class=tbl><thead><tr><th></th><th>Binance</th><th>Bybit</th><th>OKX</th><th>Hyperliquid</th></tr></thead><tbody><tr><td><b>BTC</b></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=neg>-0.0025%</span></td></tr><tr><td><b>ETH</b></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=pos>+0.0076%</span></td></tr></tbody></table>
+  <table class=tbl><thead><tr><th></th><th>Binance</th><th>Bybit</th><th>OKX</th><th>Hyperliquid</th></tr></thead><tbody><tr><td><b>BTC</b></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=neg>-0.0089%</span></td></tr><tr><td><b>ETH</b></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=>—</span></td><td><span class=pos>+0.0100%</span></td></tr></tbody></table>
   <div style="height:10px"></div><div class=muted style="margin-bottom:6px">Arb spreads (max - min)</div><div class="muted">—</div></div>
 </div><div style="height:14px"></div><div class=c><div class=h>Top 24h dislocations from repo logs</div><div class=muted style="margin-bottom:6px">Strongest basis / funding events across tracked assets using only logs-branch NDJSON from the last 24h.</div><div class="muted">—</div></div><div class=s style="margin-top:12px">Sources: Binance · Hyperliquid · CoinGlass · Bybit · OKX · repo logs branch</div>
 </div></body></html>
